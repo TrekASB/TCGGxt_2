@@ -109,14 +109,14 @@
   <script>
     let API = null;
 
-    // Navnet på propertyen vi er ute etter (originalt IFC-navn)
+    // Mål-property
     const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
     const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
-    // Holder på siste tekst-markup slik at vi kan oppdatere / slette den
+    // Holder id til siste tekst-markup
     let lastTextMarkupId = null;
 
-    // ---- UI helpers ----
+    // ---------- UI helpers ----------
     function normalizeName(name) {
       return (name || "")
         .toString()
@@ -145,7 +145,7 @@
         raw ? `Raw-verdi: ${raw}` : "";
     }
 
-    // ---- Workspace init ----
+    // ---------- Workspace init ----------
     async function connectToWorkspace() {
       API = await TrimbleConnectWorkspace.connect(
         window.parent,
@@ -163,7 +163,6 @@
     }
 
     function onWorkspaceEvent(event, payload) {
-      // Debug i konsoll
       console.log("Event fra Workspace:", event, payload);
 
       if (event === "viewer.onSelectionChanged" || event === "selection-changed") {
@@ -171,7 +170,7 @@
       }
     }
 
-    // ---- Hovedlogikk når du velger et objekt ----
+    // ---------- Håndter valg av objekt ----------
     async function handleSelectionChanged(payload) {
       try {
         setError("");
@@ -227,11 +226,12 @@
         const { value, psetName } = result;
         const num = parseFloat(value);
         const display = isNaN(num) ? `${value}` : `${num}`;
+        const objectName = findObjectName(objProps);
+
         setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
         setBik(display, psetName, `${value}`);
 
-        // Prøv å legge inn 3D-tekst i viewer
-        await showBikTextMarkup(modelId, runtimeId, display);
+        await showBikTextMarkup(modelId, runtimeId, display, objectName);
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
@@ -239,7 +239,7 @@
       }
     }
 
-    // ---- Finn BIK-verdi i propertysets ----
+    // ---------- Finn BIK-verdi ----------
     function findBikValue(objProps) {
       const psets = objProps.properties || [];
 
@@ -263,7 +263,22 @@
       return null;
     }
 
-    // ---- Markup-hjelpere ----
+    // ---------- Finn Objektnavn ----------
+    function findObjectName(objProps) {
+      const psets = objProps.properties || [];
+      for (const pset of psets) {
+        const props = pset.properties || [];
+        for (const p of props) {
+          const norm = normalizeName(p.name);
+          if (norm === "OBJEKTNAVN") {
+            return p.value || "";
+          }
+        }
+      }
+      return "";
+    }
+
+    // ---------- Markup-hjelpere ----------
     async function clearTextMarkup() {
       try {
         if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") {
@@ -278,15 +293,14 @@
       }
     }
 
-    async function showBikTextMarkup(modelId, runtimeId, bikDisplay) {
+    async function showBikTextMarkup(modelId, runtimeId, bikDisplay, objectName) {
       if (!API || !API.markup || typeof API.markup.addTextMarkup !== "function") {
-        // Ingen støtte for markups i denne konteksten
         console.warn("MarkupAPI ikke tilgjengelig – kan ikke tegne 3D-tekst.");
         return;
       }
 
       try {
-        // Hent bounding box for objektet
+        // Hent bounding box i meter
         const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
         console.log("getObjectBoundingBoxes result:", boxes);
 
@@ -299,37 +313,39 @@
         const min = bb.min;
         const max = bb.max;
 
-        // Midtpunkt i plan, øverst på kummen
+        // Senter i XY, og top i Z
         const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
-        const centerY_mm = (max.y + 0.20) * 1000.0; // 20 cm over toppen
-        const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
+        const centerY_mm = ((min.y + max.y) / 2.0) * 1000.0;
+        const topZ_mm    = (max.z) * 1000.0;
 
+        // Start litt over toppen, og trekk linja videre oppover
         const startPick = {
           positionX: centerX_mm,
           positionY: centerY_mm,
-          positionZ: centerZ_mm,
+          positionZ: topZ_mm + 200.0,   // 20 cm over top
           modelId: modelId,
           objectId: runtimeId
         };
 
-        // Liten "vertikal" linje (1 m) så teksten får en retning
         const endPick = {
           positionX: centerX_mm,
-          positionY: centerY_mm + 1000.0,
-          positionZ: centerZ_mm,
+          positionY: centerY_mm,
+          positionZ: topZ_mm + 1200.0,  // 1 m over start
           modelId: modelId,
           objectId: runtimeId
         };
 
-        // Rydd bort forrige markup
         await clearTextMarkup();
+
+        const text =
+          (objectName ? objectName + "\n" : "") +
+          `BIK: ${bikDisplay}`;
 
         const textMarkup = {
           start: startPick,
           end: endPick,
-          text: `BIK: ${bikDisplay}`,
-          // Lys gul-ish tekstfarge
-          color: { r: 0, g: 0, b: 204, a: 255 }
+          text: text,
+          color: { r: 0, g: 0, b: 204, a: 255 } // mørk blå
         };
 
         const created = await API.markup.addTextMarkup([textMarkup]);
@@ -339,15 +355,14 @@
           lastTextMarkupId = created[0].id;
         }
 
-        // Pass på at markups er synlige i viewer
-        setStatus(`Fant BIK og la til 3D-tekst (sjekk at markups/annotations er slått på i viewer).`);
+        setStatus("Viser 3D-tekst (sjekk at markups/annotations er slått på i viewer).");
       } catch (err) {
         console.error("Feil ved opprettelse av text markup:", err);
         setError("Klarte ikke å lage 3D-tekst: " + (err.message || err));
       }
     }
 
-    // ---- Oppstart ----
+    // ---------- Oppstart ----------
     (async () => {
       try {
         await connectToWorkspace();
@@ -360,4 +375,3 @@
   </script>
 </body>
 </html>
-
