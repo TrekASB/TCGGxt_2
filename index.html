@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="no">
 <head>
   <meta charset="UTF-8" />
   <title>Kote Bunn Innvendig Kum (BIK)</title>
@@ -11,87 +11,84 @@
   <style>
     :root {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color-scheme: light dark;
     }
 
     body {
       margin: 0;
       padding: 0;
+      background: #f5f5f7;
+      color: #111827;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      height: 100vh;
-      background: #fafafa;
     }
 
     header {
-      padding: 8px 12px;
-      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
       font-size: 14px;
       font-weight: 600;
-      background: #f5f5f5;
+    }
+
+    header .status {
+      margin-left: auto;
+      font-weight: 400;
+      font-size: 12px;
+      opacity: 0.8;
     }
 
     main {
-      flex: 1;
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      padding: 12px;
-      box-sizing: border-box;
-    }
-
-    #status {
-      font-size: 13px;
-      opacity: 0.9;
-    }
-
-    #error {
-      font-size: 13px;
-      color: #b00020;
-      min-height: 18px;
+      gap: 10px;
     }
 
     .card {
+      background: #ffffff;
       border-radius: 8px;
-      border: 1px solid #ddd;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
       padding: 10px 12px;
-      background: #fff;
+      font-size: 13px;
     }
 
     .label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      opacity: 0.7;
-      margin-bottom: 2px;
+      font-weight: 600;
+      margin-bottom: 6px;
     }
 
     .value {
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .value.small {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 13px;
-      font-weight: 400;
-      opacity: 0.9;
-      word-break: break-all;
     }
 
     .muted {
-      opacity: 0.7;
-      font-size: 13px;
+      opacity: 0.75;
+    }
+
+    .small {
+      font-size: 12px;
+    }
+
+    #error {
+      color: #b91c1c;
+      font-size: 12px;
+      min-height: 16px;
+      white-space: pre-wrap;
     }
   </style>
 </head>
 <body>
   <header>
     Kote Bunn Innvendig Kum (BIK)
+    <span class="status" id="status">Kobler til Trimble Connect…</span>
   </header>
 
   <main>
-    <div id="status">Kobler til Trimble Connect…</div>
-
     <div class="card">
       <div class="label">Valgt objekt</div>
       <div id="objectInfo" class="value small muted">
@@ -101,8 +98,9 @@
 
     <div class="card">
       <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
-      <div id="bikValue" class="value">–</div>
-      <div id="bikRaw" class="muted"></div>
+      <div id="bikValue" class="value">Ikke funnet</div>
+      <div id="bikPset" class="muted small"></div>
+      <div id="bikRaw" class="muted small"></div>
     </div>
 
     <div id="error"></div>
@@ -111,17 +109,19 @@
   <script>
     let API = null;
 
-    // Normaliserer navn (for robuste sammenligninger)
+    // Navnet på propertyen vi er ute etter (originalt IFC-navn)
+    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+
+    // Robust normalisering: fjerner alle tegn som ikke er A–Z/0–9
     function normalizeName(name) {
       return (name || "")
         .toString()
-        .trim()
         .toUpperCase()
-        .replace(/\s+/g, " "); // collapse whitespace
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
     }
 
-    const TARGET_PSET = "WA_Pset";
-    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
     function setStatus(msg) {
       document.getElementById("status").textContent = msg;
@@ -135,9 +135,12 @@
       document.getElementById("objectInfo").textContent = text;
     }
 
-    function setBikValue(display, raw) {
-      document.getElementById("bikValue").textContent = display;
-      document.getElementById("bikRaw").textContent = raw || "";
+    function setBik(display, psetName, raw) {
+      document.getElementById("bikValue").textContent = display || "Ikke funnet";
+      document.getElementById("bikPset").textContent =
+        psetName ? `Funnet i PropertySet: ${psetName}` : "";
+      document.getElementById("bikRaw").textContent =
+        raw ? `Raw-verdi: ${raw}` : "";
     }
 
     async function connectToWorkspace() {
@@ -147,23 +150,17 @@
         30000
       );
       setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
+      console.log("Workspace API tilkoblet:", API);
     }
 
-    /**
-     * Håndterer alle events fra Workspace API.
-     * Vi bryr oss spesielt om viewer.onSelectionChanged.
-     */
     function onWorkspaceEvent(event, payload) {
-      // console.log("Event:", event, payload);
-      if (event === "viewer.onSelectionChanged") {
+      console.log("Event fra Workspace:", event, payload);
+
+      if (event === "viewer.onSelectionChanged" || event === "selection-changed") {
         handleSelectionChanged(payload);
       }
     }
 
-    /**
-     * payload: SelectionChangedEventArgument
-     * payload.data er Selection = ModelObjectIds[]
-     */
     async function handleSelectionChanged(payload) {
       try {
         setError("");
@@ -172,11 +169,10 @@
         if (!selection.length) {
           setStatus("Ingen objekt valgt.");
           setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
-          setBikValue("–", "");
+          setBik("Ikke funnet", "", "");
           return;
         }
 
-        // Ta første modell i selection
         const first = selection[0];
         const modelId = first.modelId;
         const runtimeIds = first.objectRuntimeIds || [];
@@ -184,78 +180,70 @@
         if (!modelId || !runtimeIds.length) {
           setStatus("Ingen gyldig objekt i utvalget.");
           setObjectInfo("Ingen gyldig objekt i utvalget.");
-          setBikValue("–", "");
+          setBik("Ikke funnet", "", "");
           return;
         }
 
-        // For enkelhet: ta første runtimeId
         const runtimeId = runtimeIds[0];
 
+        setObjectInfo(
+          `ModellId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${first.class || "ukjent"}`
+        );
         setStatus("Leser egenskaper for valgt objekt…");
 
         const propsArray = await API.viewer.getObjectProperties(
           modelId,
           [runtimeId]
         );
+        console.log("getObjectProperties result:", propsArray);
 
         if (!propsArray || !propsArray.length) {
           setStatus("Fant ingen egenskaper for objektet.");
-          setObjectInfo(`ModelId: ${modelId}, RuntimeId: ${runtimeId}`);
-          setBikValue("Ingen data", "");
+          setBik("Ingen data", "", "");
           return;
         }
 
-        const obj = propsArray[0];
+        const objProps = propsArray[0];
+        const result = findBikValue(objProps);
 
-        // Vis litt info om objektet
-        const className = obj.class || "ukjent klasse";
-        setObjectInfo(
-          `ModelId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${className}`
-        );
-
-        const bik = findBikValue(obj);
-        if (bik == null || bik === "") {
-          setStatus("Fant ikke 'Kote Bunn Innvendig Kum (BIK)' på dette objektet.");
-          setBikValue("Ikke funnet", "");
+        if (!result) {
+          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
+          setBik("Ikke funnet", "", "");
         } else {
-          // Forsøk å tolke som tall og vis med m-enhet
-          const num = parseFloat(bik);
-          if (isNaN(num)) {
-            setBikValue(String(bik), "(ikke-numerisk verdi)");
-          } else {
-            // f.eks. 3 desimaler
-            const formatted = num.toFixed(3) + " m";
-            setBikValue(formatted, `Råverdi: ${bik}`);
-          }
-          setStatus("BIK lest fra WA_Pset.");
+          const { value, psetName } = result;
+          const num = parseFloat(value);
+          const display = isNaN(num) ? `${value}` : `${num}`;
+          setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
+          setBik(display, psetName, `${value}`);
         }
       } catch (err) {
-        console.error(err);
+        console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
         setStatus("Kunne ikke lese BIK-verdi.");
       }
     }
 
-    /**
-     * Finner verdien til WA_Pset / Kote Bunn Innvendig Kum (BIK)
-     * i ObjectProperties-strukturen.
-     */
+    // Leter etter propertyen i ALLE propertySets
     function findBikValue(objProps) {
       const psets = objProps.properties || [];
-      const targetPsetNorm = normalizeName(TARGET_PSET);
-      const targetPropNorm = normalizeName(TARGET_PROP);
 
       for (const pset of psets) {
-        const setNameNorm = normalizeName(pset.set);
-        if (setNameNorm !== targetPsetNorm) continue;
-
+        const psetName = pset.set || "";
         const props = pset.properties || [];
+
         for (const p of props) {
-          if (normalizeName(p.name) === targetPropNorm) {
-            return p.value;
+          const propNameNorm = normalizeName(p.name);
+          if (propNameNorm === TARGET_PROP_NORM) {
+            console.log("Fant BIK-property:", p, "i Pset:", psetName);
+            return {
+              value: p.value,
+              psetName: psetName
+            };
           }
         }
       }
+
+      console.log("Fant ikke BIK-property i objProps:", objProps);
       return null;
     }
 
