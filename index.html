@@ -98,9 +98,17 @@
     </div>
 
     <div class="card">
-      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
-      <div id="bikValue" class="value">Ikke funnet</div>
-      <div id="bikPset" class="muted small"></div>
+      <div class="label">Objektnavn & Kote Bunn Innvendig Kum (BIK)</div>
+      <div class="muted small">Verdier leses fra WS_Pset.</div>
+      <div style="margin-top:8px;">
+        <div class="muted small">Objektnavn</div>
+        <div id="objNameValue" class="value">–</div>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="muted small">Kote Bunn Innvendig Kum (BIK)</div>
+        <div id="bikValue" class="value">Ikke funnet</div>
+      </div>
+      <div id="bikPset" class="muted small" style="margin-top:4px;"></div>
       <div id="bikRaw" class="muted small"></div>
     </div>
 
@@ -110,7 +118,8 @@
   <script>
     let API = null;
 
-    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+    const TARGET_PROP_BIK = "Kote Bunn Innvendig Kum (BIK)";
+    const TARGET_PROP_NAME = "Objektnavn";
 
     function normalizeName(name) {
       return (name || "")
@@ -120,7 +129,8 @@
         .replace(/^_+|_+$/g, "");
     }
 
-    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
+    const TARGET_PROP_BIK_NORM = normalizeName(TARGET_PROP_BIK);
+    const TARGET_PROP_NAME_NORM = normalizeName(TARGET_PROP_NAME);
 
     function setStatus(msg) {
       document.getElementById("status").textContent = msg;
@@ -134,12 +144,18 @@
       document.getElementById("objectInfo").textContent = text;
     }
 
-    function setBik(display, psetName, raw) {
-      document.getElementById("bikValue").textContent = display || "Ikke funnet";
+    function setNameAndBik(objName, bikDisplay, psetName, rawBik) {
+      document.getElementById("objNameValue").textContent =
+        objName && objName !== "" ? objName : "–";
+
+      document.getElementById("bikValue").textContent =
+        bikDisplay && bikDisplay !== "" ? bikDisplay : "Ikke funnet";
+
       document.getElementById("bikPset").textContent =
         psetName ? `Funnet i PropertySet: ${psetName}` : "";
+
       document.getElementById("bikRaw").textContent =
-        raw ? `Raw-verdi: ${raw}` : "";
+        rawBik ? `Raw-verdi BIK: ${rawBik}` : "";
     }
 
     async function connectToWorkspace() {
@@ -148,7 +164,7 @@
         onWorkspaceEvent,
         30000
       );
-      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
+      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese data.");
       console.log("Workspace API tilkoblet:", API);
     }
 
@@ -168,7 +184,7 @@
         if (!selection.length) {
           setStatus("Ingen objekt valgt.");
           setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
-          setBik("Ikke funnet", "", "");
+          setNameAndBik("", "", "", "");
           await clearBikTextMarkup();
           return;
         }
@@ -180,7 +196,7 @@
         if (!modelId || !runtimeIds.length) {
           setStatus("Ingen gyldig objekt i utvalget.");
           setObjectInfo("Ingen gyldig objekt i utvalget.");
-          setBik("Ikke funnet", "", "");
+          setNameAndBik("", "", "", "");
           await clearBikTextMarkup();
           return;
         }
@@ -201,38 +217,46 @@
 
         if (!propsArray || !propsArray.length) {
           setStatus("Fant ingen egenskaper for objektet.");
-          setBik("Ingen data", "", "");
+          setNameAndBik("", "", "", "");
           await clearBikTextMarkup();
           return;
         }
 
         const objProps = propsArray[0];
-        const result = findBikValue(objProps);
+        const result = findNameAndBik(objProps);
 
-        if (!result) {
-          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
-          setBik("Ikke funnet", "", "");
+        if (!result || !result.bikValue) {
+          setStatus(`Fant ikke '${TARGET_PROP_BIK}' på dette objektet.`);
+          setNameAndBik(result ? result.objName || "" : "", "", "", "");
           await clearBikTextMarkup();
         } else {
-          const { value, psetName } = result;
-          const num = parseFloat(value);
-          const display = isNaN(num) ? `${value}` : `${num}`;
-          setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
-          setBik(display, psetName, `${value}`);
+          const { bikValue, psetName, objName } = result;
+          const num = parseFloat(bikValue);
+          const display = isNaN(num) ? `${bikValue}` : `${num}`;
+          setStatus(`Fant '${TARGET_PROP_BIK}' på dette objektet.`);
+          setNameAndBik(objName || "", display, psetName, `${bikValue}`);
 
-          // Lag / oppdater 3D-tekst ved kummen (skjerm-orientert tekstmarkup)
-          await updateBikTextMarkup(modelId, runtimeId, `BIK: ${display}`);
+          // Teksten i 3D: "Objektnavn – BIK: xxx.xxx"
+          const textLabel = objName
+            ? `${objName} – BIK: ${display}`
+            : `BIK: ${display}`;
+
+          await updateBikTextMarkup(modelId, runtimeId, textLabel);
         }
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
-        setStatus("Kunne ikke lese BIK-verdi.");
+        setStatus("Kunne ikke lese verdier.");
       }
     }
 
-    // Finn BIK-verdi i alle propertySets
-    function findBikValue(objProps) {
+    // Finn både Objektnavn og BIK i alle propertySets (typisk WS_Pset)
+    function findNameAndBik(objProps) {
       const psets = objProps.properties || [];
+
+      let bikValue = null;
+      let objName = null;
+      let psetNameForBik = null;
 
       for (const pset of psets) {
         const psetName = pset.set || "";
@@ -240,34 +264,42 @@
 
         for (const p of props) {
           const propNameNorm = normalizeName(p.name);
-          if (propNameNorm === TARGET_PROP_NORM) {
-            console.log("Fant BIK-property:", p, "i Pset:", psetName);
-            return {
-              value: p.value,
-              psetName: psetName,
-            };
+
+          if (propNameNorm === TARGET_PROP_BIK_NORM) {
+            bikValue = p.value;
+            psetNameForBik = psetName;
+          }
+          if (propNameNorm === TARGET_PROP_NAME_NORM) {
+            objName = p.value;
           }
         }
       }
 
-      console.log("Fant ikke BIK-property i objProps:", objProps);
-      return null;
+      console.log("Resultat findNameAndBik:", {
+        bikValue,
+        objName,
+        psetNameForBik,
+      });
+
+      if (!bikValue && !objName) return null;
+      return {
+        bikValue,
+        objName,
+        psetName: psetNameForBik,
+      };
     }
 
-    // Fjern tekst-markups som extensionen har laget
+    // Fjern tekst-/linje-markups som extensionen har laget
     async function clearBikTextMarkup() {
       if (!API || !API.markup) return;
       try {
-        // undefined => fjern alle markups
         await API.markup.removeMarkups(undefined);
       } catch (e) {
         console.warn("Klarte ikke å fjerne markups:", e);
       }
     }
 
-    // Lag tekst-markup ved valgt kum.
-    // Tekstmarkup i Connect er skjermorientert (ortogonal til vinduet)
-    // men anker seg i punktet vi gir som MarkupPick.
+    // Tekst + leader-linje fra tekst ned til senter topp kum
     async function updateBikTextMarkup(modelId, runtimeId, text) {
       if (!API || !API.viewer || !API.markup) return;
 
@@ -285,15 +317,30 @@
         const centerY = (bbox.min.y + bbox.max.y) / 2;
         const topZ = bbox.max.z;
 
-        // Plasser teksten litt over toppen av kummen
+        // Punkt på kum der linjen skal treffe
+        const anchorPos = {
+          x: centerX,
+          y: centerY,
+          z: topZ + 0.01,
+        };
+
+        // Punkt der teksten skal være (litt høyere)
         const textPos = {
           x: centerX,
           y: centerY,
-          z: topZ + 0.2, // juster offset om du vil ha den høyere/lavere
+          z: topZ + 0.30,
         };
 
-        /** @type {import('trimble-connect-workspace-api').MarkupPick} */
-        const pick = {
+        const anchorPick = {
+          modelId: modelId,
+          objectId: runtimeId,
+          type: "point",
+          positionX: anchorPos.x,
+          positionY: anchorPos.y,
+          positionZ: anchorPos.z,
+        };
+
+        const textPick = {
           modelId: modelId,
           objectId: runtimeId,
           type: "point",
@@ -303,19 +350,27 @@
         };
 
         const textMarkup = {
-          start: pick,
-          end: pick,
+          start: textPick,
+          end: textPick,
           text: text,
           color: { r: 55, g: 130, b: 70, a: 255 },
+          type: "Text",
         };
 
-        // Fjern gammel tekst og legg til ny
+        const lineMarkup = {
+          start: textPick,
+          end: anchorPick,
+          color: { r: 55, g: 130, b: 70, a: 255 },
+          type: "Line",
+        };
+
         await API.markup.removeMarkups(undefined);
         await API.markup.addTextMarkup([textMarkup]);
+        await API.markup.addLineMarkup([lineMarkup]);
 
-        console.log("La til BIK-tekstmarkup:", textMarkup);
+        console.log("La til tekst + leader line:", { textMarkup, lineMarkup });
       } catch (e) {
-        console.error("Feil ved opprettelse av tekstmarkup:", e);
+        console.error("Feil ved opprettelse av tekst/linje markup:", e);
       }
     }
 
