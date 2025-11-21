@@ -1,4 +1,5 @@
-// Legg inn 3D-tekst (screen-ortogonalt) over valgt kum
+// Lag tekst og strek-markup ved valgt kum.
+// Tekst er skjermorientert. Linjen (leader) peker til senter topp av kummen.
 async function updateBikTextMarkup(modelId, runtimeId, text) {
   if (!API || !API.viewer || !API.markup) return;
 
@@ -10,48 +11,70 @@ async function updateBikTextMarkup(modelId, runtimeId, text) {
     }
 
     const bbox = boxes[0].boundingBox;
-
-    // Størrelse på objekt (for å gjette om enhet er meter eller mm)
-    const sizeX = Math.abs(bbox.max.x - bbox.min.x);
-    const sizeY = Math.abs(bbox.max.y - bbox.min.y);
-    const sizeZ = Math.abs(bbox.max.z - bbox.min.z);
-    const maxSize = Math.max(sizeX, sizeY, sizeZ);
-
-    // Heuristikk:
-    // - hvis kummen er ~1–5 (typisk meter) -> gang med 1000 = mm
-    // - hvis den er 500–5000 (typisk mm) -> behold som det er
-    const factor = maxSize < 20 ? 1000.0 : 1.0;
-
     const centerX = (bbox.min.x + bbox.max.x) / 2;
     const centerY = (bbox.min.y + bbox.max.y) / 2;
-    const topZ    = bbox.max.z;
+    const topZ = bbox.max.z;
 
-    // Punkt for teksten – litt over kumtopp
-    const pick = {
+    // Punkt på kum der linjen skal treffe
+    const anchorPos = {
+      x: centerX,
+      y: centerY,
+      z: topZ + 0.01, // ultra-liten offset for å unngå z-fighting
+    };
+
+    // Punkt der teksten skal være (litt høyere)
+    const textPos = {
+      x: centerX,
+      y: centerY,
+      z: topZ + 0.30, // juster høyde her
+    };
+
+    // === Pick-objekter ===
+    const anchorPick = {
       modelId: modelId,
       objectId: runtimeId,
-      positionX: centerX * factor,
-      positionY: centerY * factor,
-      positionZ: (topZ + 0.30) * factor  // juster høyden om du vil
-      // type kan utelates for "point"
+      type: "point",
+      positionX: anchorPos.x,
+      positionY: anchorPos.y,
+      positionZ: anchorPos.z
     };
 
-    /** @type {import("trimble-connect-workspace-api").TextMarkup} */
+    const textPick = {
+      modelId: modelId,
+      objectId: runtimeId,
+      type: "point",
+      positionX: textPos.x,
+      positionY: textPos.y,
+      positionZ: textPos.z
+    };
+
+    // === Tekst-markup (skjermorientert) ===
     const textMarkup = {
-      start: pick,
-      end: pick,
+      start: textPick,
+      end: textPick,
       text: text,
-      color: { r: 55, g: 130, b: 70, a: 255 }
+      color: { r: 55, g: 130, b: 70, a: 255 },
+      type: "Text"
     };
 
-    // Fjern alle tidligere markups laget av extensionen
+    // === Linje (leader) markup ===
+    const lineMarkup = {
+      start: textPick,
+      end: anchorPick,
+      color: { r: 55, g: 130, b: 70, a: 255 },
+      type: "Line"
+    };
+
+    // Fjern gamle markups
     await API.markup.removeMarkups(undefined);
 
-    // Legg til ny tekst-markup
-    const result = await API.markup.addTextMarkup([textMarkup]);
-    console.log("Text markup lagt til:", result);
+    // Legg til både tekst og linje
+    await API.markup.addTextMarkup([textMarkup]);
+    await API.markup.addLineMarkup([lineMarkup]);
+
+    console.log("La til tekst + leader line:", { textMarkup, lineMarkup });
 
   } catch (e) {
-    console.error("Feil ved opprettelse av tekstmarkup:", e);
+    console.error("Feil ved opprettelse av tekst/linje markup:", e);
   }
 }
