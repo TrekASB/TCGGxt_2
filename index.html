@@ -1,5 +1,4 @@
-// Lag tekst og strek-markup ved valgt kum.
-// Tekst er skjermorientert. Linjen (leader) peker til senter topp av kummen.
+// 3D-tekst + leader-linje i world-space (tekst billboards mot kamera)
 async function updateBikTextMarkup(modelId, runtimeId, text) {
   if (!API || !API.viewer || !API.markup) return;
 
@@ -11,70 +10,64 @@ async function updateBikTextMarkup(modelId, runtimeId, text) {
     }
 
     const bbox = boxes[0].boundingBox;
-    const centerX = (bbox.min.x + bbox.max.x) / 2;
-    const centerY = (bbox.min.y + bbox.max.y) / 2;
-    const topZ = bbox.max.z;
 
-    // Punkt på kum der linjen skal treffe
-    const anchorPos = {
-      x: centerX,
-      y: centerY,
-      z: topZ + 0.01, // ultra-liten offset for å unngå z-fighting
-    };
+    // ViewerAPI ObjectBoundingBox bruker samme koordinatsystem som modellen,
+    // mens MarkupPick.positionX/Y/Z skal være i millimeter.
+    const toMm = v => v * 1000.0;
 
-    // Punkt der teksten skal være (litt høyere)
-    const textPos = {
-      x: centerX,
-      y: centerY,
-      z: topZ + 0.30, // juster høyde her
-    };
+    const centerX_m = (bbox.min.x + bbox.max.x) / 2;
+    const centerY_m = (bbox.min.y + bbox.max.y) / 2;
+    const topZ_m    =  bbox.max.z;
 
-    // === Pick-objekter ===
+    // Ankerpunkt (på kum-topp)
     const anchorPick = {
       modelId: modelId,
       objectId: runtimeId,
       type: "point",
-      positionX: anchorPos.x,
-      positionY: anchorPos.y,
-      positionZ: anchorPos.z
+      positionX: toMm(centerX_m),
+      positionY: toMm(centerY_m),
+      positionZ: toMm(topZ_m + 0.01) // liten offset over geometri
     };
 
+    // Tekstpunkt (over kummen)
     const textPick = {
       modelId: modelId,
       objectId: runtimeId,
       type: "point",
-      positionX: textPos.x,
-      positionY: textPos.y,
-      positionZ: textPos.z
+      positionX: toMm(centerX_m),
+      positionY: toMm(centerY_m),
+      positionZ: toMm(topZ_m + 0.30) // høyde på teksten
     };
 
-    // === Tekst-markup (skjermorientert) ===
+    // Tekst-markup: world-space posisjon, tekst følger kamera
+    /** @type {import("trimble-connect-workspace-api").TextMarkup} */
     const textMarkup = {
       start: textPick,
       end: textPick,
       text: text,
-      color: { r: 55, g: 130, b: 70, a: 255 },
-      type: "Text"
+      color: { r: 55, g: 130, b: 70, a: 255 }
+      // ev. backgroundColor: { r: 255, g: 255, b: 255, a: 220 },
+      // id: 1   // om du vil oppdatere samme markup senere
     };
 
-    // === Linje (leader) markup ===
+    // Leader-linje fra tekst ned til kum
+    /** @type {import("trimble-connect-workspace-api").LineMarkup} */
     const lineMarkup = {
       start: textPick,
       end: anchorPick,
-      color: { r: 55, g: 130, b: 70, a: 255 },
-      type: "Line"
+      color: { r: 55, g: 130, b: 70, a: 255 }
     };
 
-    // Fjern gamle markups
+    // Fjern tidligere markups fra denne extensionen
     await API.markup.removeMarkups(undefined);
 
-    // Legg til både tekst og linje
+    // Legg til tekst + linje
     await API.markup.addTextMarkup([textMarkup]);
-    await API.markup.addLineMarkup([lineMarkup]);
+    await API.markup.addLineMarkups([lineMarkup]);
 
-    console.log("La til tekst + leader line:", { textMarkup, lineMarkup });
+    console.log("La til BIK-tekst + leader-linje:", { textMarkup, lineMarkup });
 
   } catch (e) {
-    console.error("Feil ved opprettelse av tekst/linje markup:", e);
+    console.error("Feil ved opprettelse av tekst/linje-markup:", e);
   }
 }
