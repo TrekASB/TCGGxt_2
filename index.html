@@ -220,7 +220,7 @@
           setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
           setBik(display, psetName, `${value}`);
 
-          // Lag / oppdater 3D tekst ved kummen
+          // Lag / oppdater 3D-tekst ved kummen (skjerm-orientert tekstmarkup)
           await updateBikTextMarkup(modelId, runtimeId, `BIK: ${display}`);
         }
       } catch (err) {
@@ -254,22 +254,24 @@
       return null;
     }
 
-    // Fjern alle tekst-markups som extensionen har laget
+    // Fjern tekst-markups som extensionen har laget
     async function clearBikTextMarkup() {
       if (!API || !API.markup) return;
       try {
-        await API.markup.removeMarkups(undefined); // undefined => fjern alle markups
+        // undefined => fjern alle markups
+        await API.markup.removeMarkups(undefined);
       } catch (e) {
         console.warn("Klarte ikke å fjerne markups:", e);
       }
     }
 
-    // Lag 3D tekst ved valgt kum
+    // Lag tekst-markup ved valgt kum.
+    // Tekstmarkup i Connect er skjermorientert (ortogonal til vinduet)
+    // men anker seg i punktet vi gir som MarkupPick.
     async function updateBikTextMarkup(modelId, runtimeId, text) {
       if (!API || !API.viewer || !API.markup) return;
 
       try {
-        // Hent bounding box for objektet
         const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [
           runtimeId,
         ]);
@@ -283,31 +285,31 @@
         const centerY = (bbox.min.y + bbox.max.y) / 2;
         const topZ = bbox.max.z;
 
-        // Plasser teksten litt over toppen av kummen (0.2 m opp)
+        // Plasser teksten litt over toppen av kummen
         const textPos = {
           x: centerX,
           y: centerY,
-          z: topZ + 0.2,
+          z: topZ + 0.2, // juster offset om du vil ha den høyere/lavere
         };
 
-        // MarkupPick bruker mm, så vi ganger med 1000
+        /** @type {import('trimble-connect-workspace-api').MarkupPick} */
         const pick = {
           modelId: modelId,
           objectId: runtimeId,
           type: "point",
-          positionX: textPos.x * 1000,
-          positionY: textPos.y * 1000,
-          positionZ: textPos.z * 1000,
+          positionX: textPos.x,
+          positionY: textPos.y,
+          positionZ: textPos.z,
         };
 
         const textMarkup = {
           start: pick,
           end: pick,
           text: text,
-          color: { r: 55, g: 130, b: 70, a: 255 }, // grønn-ish
+          color: { r: 55, g: 130, b: 70, a: 255 },
         };
 
-        // Fjern tidligere markups og legg til ny
+        // Fjern gammel tekst og legg til ny
         await API.markup.removeMarkups(undefined);
         await API.markup.addTextMarkup([textMarkup]);
 
