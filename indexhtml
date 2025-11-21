@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kote Bunn Innvendig Kum (BIK)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Trimble Connect Workspace API -->
+  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: light dark;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #fafafa;
+    }
+
+    header {
+      padding: 8px 12px;
+      border-bottom: 1px solid #ddd;
+      font-size: 14px;
+      font-weight: 600;
+      background: #f5f5f5;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    #status {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    #error {
+      font-size: 13px;
+      color: #b00020;
+      min-height: 18px;
+    }
+
+    .card {
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      padding: 10px 12px;
+      background: #fff;
+    }
+
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+      margin-bottom: 2px;
+    }
+
+    .value {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .value.small {
+      font-size: 13px;
+      font-weight: 400;
+      opacity: 0.9;
+      word-break: break-all;
+    }
+
+    .muted {
+      opacity: 0.7;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    Kote Bunn Innvendig Kum (BIK)
+  </header>
+
+  <main>
+    <div id="status">Kobler til Trimble Connect…</div>
+
+    <div class="card">
+      <div class="label">Valgt objekt</div>
+      <div id="objectInfo" class="value small muted">
+        Ingen objekt valgt. Klikk på en kum i modellen.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
+      <div id="bikValue" class="value">–</div>
+      <div id="bikRaw" class="muted"></div>
+    </div>
+
+    <div id="error"></div>
+  </main>
+
+  <script>
+    let API = null;
+
+    // Normaliserer navn (for robuste sammenligninger)
+    function normalizeName(name) {
+      return (name || "")
+        .toString()
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " "); // collapse whitespace
+    }
+
+    const TARGET_PSET = "WA_Pset";
+    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function setError(msg) {
+      document.getElementById("error").textContent = msg || "";
+    }
+
+    function setObjectInfo(text) {
+      document.getElementById("objectInfo").textContent = text;
+    }
+
+    function setBikValue(display, raw) {
+      document.getElementById("bikValue").textContent = display;
+      document.getElementById("bikRaw").textContent = raw || "";
+    }
+
+    async function connectToWorkspace() {
+      API = await TrimbleConnectWorkspace.connect(
+        window.parent,
+        onWorkspaceEvent,
+        30000
+      );
+      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
+    }
+
+    /**
+     * Håndterer alle events fra Workspace API.
+     * Vi bryr oss spesielt om viewer.onSelectionChanged.
+     */
+    function onWorkspaceEvent(event, payload) {
+      // console.log("Event:", event, payload);
+      if (event === "viewer.onSelectionChanged") {
+        handleSelectionChanged(payload);
+      }
+    }
+
+    /**
+     * payload: SelectionChangedEventArgument
+     * payload.data er Selection = ModelObjectIds[]
+     */
+    async function handleSelectionChanged(payload) {
+      try {
+        setError("");
+
+        const selection = (payload && payload.data) || [];
+        if (!selection.length) {
+          setStatus("Ingen objekt valgt.");
+          setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
+          setBikValue("–", "");
+          return;
+        }
+
+        // Ta første modell i selection
+        const first = selection[0];
+        const modelId = first.modelId;
+        const runtimeIds = first.objectRuntimeIds || [];
+
+        if (!modelId || !runtimeIds.length) {
+          setStatus("Ingen gyldig objekt i utvalget.");
+          setObjectInfo("Ingen gyldig objekt i utvalget.");
+          setBikValue("–", "");
+          return;
+        }
+
+        // For enkelhet: ta første runtimeId
+        const runtimeId = runtimeIds[0];
+
+        setStatus("Leser egenskaper for valgt objekt…");
+
+        const propsArray = await API.viewer.getObjectProperties(
+          modelId,
+          [runtimeId]
+        );
+
+        if (!propsArray || !propsArray.length) {
+          setStatus("Fant ingen egenskaper for objektet.");
+          setObjectInfo(`ModelId: ${modelId}, RuntimeId: ${runtimeId}`);
+          setBikValue("Ingen data", "");
+          return;
+        }
+
+        const obj = propsArray[0];
+
+        // Vis litt info om objektet
+        const className = obj.class || "ukjent klasse";
+        setObjectInfo(
+          `ModelId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${className}`
+        );
+
+        const bik = findBikValue(obj);
+        if (bik == null || bik === "") {
+          setStatus("Fant ikke 'Kote Bunn Innvendig Kum (BIK)' på dette objektet.");
+          setBikValue("Ikke funnet", "");
+        } else {
+          // Forsøk å tolke som tall og vis med m-enhet
+          const num = parseFloat(bik);
+          if (isNaN(num)) {
+            setBikValue(String(bik), "(ikke-numerisk verdi)");
+          } else {
+            // f.eks. 3 desimaler
+            const formatted = num.toFixed(3) + " m";
+            setBikValue(formatted, `Råverdi: ${bik}`);
+          }
+          setStatus("BIK lest fra WA_Pset.");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("Feil ved lesing av egenskaper: " + (err.message || err));
+        setStatus("Kunne ikke lese BIK-verdi.");
+      }
+    }
+
+    /**
+     * Finner verdien til WA_Pset / Kote Bunn Innvendig Kum (BIK)
+     * i ObjectProperties-strukturen.
+     */
+    function findBikValue(objProps) {
+      const psets = objProps.properties || [];
+      const targetPsetNorm = normalizeName(TARGET_PSET);
+      const targetPropNorm = normalizeName(TARGET_PROP);
+
+      for (const pset of psets) {
+        const setNameNorm = normalizeName(pset.set);
+        if (setNameNorm !== targetPsetNorm) continue;
+
+        const props = pset.properties || [];
+        for (const p of props) {
+          if (normalizeName(p.name) === targetPropNorm) {
+            return p.value;
+          }
+        }
+      }
+      return null;
+    }
+
+    (async () => {
+      try {
+        await connectToWorkspace();
+      } catch (err) {
+        console.error(err);
+        setError("Klarte ikke å koble til Workspace API: " + (err.message || err));
+        setStatus("Feil.");
+      }
+    })();
+  </script>
+</body>
+</html>
