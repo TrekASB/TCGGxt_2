@@ -111,6 +111,10 @@
 
     // Navnet på propertyen vi er ute etter (originalt IFC-navn)
     const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
+
+    // Holder styr på sist lagde tekst-markup i 3D
+    let currentTextMarkupId = null;
 
     // Robust normalisering: fjerner alle tegn som ikke er A–Z/0–9
     function normalizeName(name) {
@@ -120,8 +124,6 @@
         .replace(/[^A-Z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "");
     }
-
-    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
     function setStatus(msg) {
       document.getElementById("status").textContent = msg;
@@ -161,6 +163,98 @@
       }
     }
 
+    // FJERNER tidligere tekst-markup (bare vår)
+    async function clearBikMarkup() {
+      if (!API || !API.markup) return;
+      if (currentTextMarkupId == null) return;
+
+      try {
+        await API.markup.removeMarkups([currentTextMarkupId]);
+      } catch (e) {
+        console.warn("Klarte ikke å fjerne forrige BIK-markup:", e);
+      } finally {
+        currentTextMarkupId = null;
+      }
+    }
+
+    // LAGER 3D-TEKST SOM TEXT MARKUP I VIEWER
+    async function createOrUpdateBikMarkup(modelId, runtimeId, bikDisplayValue, objProps) {
+      if (!API || !API.markup || !API.viewer) {
+        console.warn("Markup- eller viewer-API ikke tilgjengelig");
+        return;
+      }
+
+      // Fjern forrige BIK-tekst
+      await clearBikMarkup();
+
+      // Prøv først å bruke posisjonen som allerede ligger i objProps (meter)
+      let posMeters = objProps && objProps.position;
+
+      // Fallback: hent posisjon via viewer API (også i meter)
+      if (!posMeters) {
+        try {
+          const positions = await API.viewer.getObjectPositions(modelId, [runtimeId]);
+          if (positions && positions.length && positions[0].position) {
+            posMeters = positions[0].position;
+          }
+        } catch (e) {
+          console.warn("Feil ved henting av objektposisjon:", e);
+        }
+      }
+
+      if (!posMeters) {
+        console.warn("Fant ingen posisjon for objektet, kan ikke plassere 3D-tekst.");
+        return;
+      }
+
+      // Konverter til millimeter (MarkupPick bruker mm)
+      const baseX = posMeters.x * 1000;
+      const baseY = posMeters.y * 1000;
+      const baseZ = posMeters.z * 1000;
+
+      // Løft teksten litt over kummen (f.eks. 800 mm)
+      const offsetZ = 800;
+
+      const startPick = {
+        positionX: baseX,
+        positionY: baseY,
+        positionZ: baseZ,
+        modelId: modelId,
+        objectId: runtimeId,
+        type: "point"
+      };
+
+      const endPick = {
+        positionX: baseX,
+        positionY: baseY,
+        positionZ: baseZ + offsetZ,
+        modelId: modelId,
+        objectId: runtimeId,
+        type: "point"
+      };
+
+      const text = `BIK: ${bikDisplayValue}`;
+
+      const textMarkup = {
+        // id settes automatisk av API, vi leser den ut etterpå
+        start: startPick,
+        end: endPick,
+        text: text,
+        // valgfritt: gi teksten en tydelig farge (gul)
+        color: { r: 255, g: 255, b: 0, a: 255 }
+      };
+
+      try {
+        const result = await API.markup.addTextMarkup([textMarkup]);
+        console.log("Laget BIK text markup:", result);
+        if (result && result.length && typeof result[0].id === "number") {
+          currentTextMarkupId = result[0].id;
+        }
+      } catch (e) {
+        console.error("Feil ved oppretting av BIK text markup:", e);
+      }
+    }
+
     async function handleSelectionChanged(payload) {
       try {
         setError("");
@@ -170,6 +264,7 @@
           setStatus("Ingen objekt valgt.");
           setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
           setBik("Ikke funnet", "", "");
+          await clearBikMarkup();
           return;
         }
 
@@ -181,6 +276,7 @@
           setStatus("Ingen gyldig objekt i utvalget.");
           setObjectInfo("Ingen gyldig objekt i utvalget.");
           setBik("Ikke funnet", "", "");
+          await clearBikMarkup();
           return;
         }
 
@@ -200,6 +296,7 @@
         if (!propsArray || !propsArray.length) {
           setStatus("Fant ingen egenskaper for objektet.");
           setBik("Ingen data", "", "");
+          await clearBikMarkup();
           return;
         }
 
@@ -209,17 +306,23 @@
         if (!result) {
           setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
           setBik("Ikke funnet", "", "");
+          await clearBikMarkup();
         } else {
           const { value, psetName } = result;
           const num = parseFloat(value);
           const display = isNaN(num) ? `${value}` : `${num}`;
           setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
           setBik(display, psetName, `${value}`);
+
+          // >>> NYTT: lag 3D-tekst i viewer på kummen
+          await createOrUpdateBikMarkup(modelId, runtimeId, display, objProps);
         }
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
         setStatus("Kunne ikke lese BIK-verdi.");
+        // Ikke kast, men rydd opp markup
+        await clearBikMarkup();
       }
     }
 
