@@ -1,80 +1,335 @@
-// Lag tekst og strek-markup ved valgt kum.
-// Tekst er skjermorientert. Linjen (leader) peker til senter topp av kummen.
-async function updateBikTextMarkup(modelId, runtimeId, text) {
-  if (!API || !API.viewer || !API.markup) return;
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kote Bunn Innvendig Kum (BIK)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  try {
-    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
-    if (!boxes || !boxes.length) {
-      console.warn("Ingen bounding box for objekt:", modelId, runtimeId);
-      return;
+  <!-- Trimble Connect Workspace API -->
+  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    const bbox = boxes[0].boundingBox;
-    const centerX = (bbox.min.x + bbox.max.x) / 2;
-    const centerY = (bbox.min.y + bbox.max.y) / 2;
-    const topZ = bbox.max.z;
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #111827;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
 
-    // Punkt på kum der linjen skal treffe
-    const anchorPos = {
-      x: centerX,
-      y: centerY,
-      z: topZ + 0.01, // ultra-liten offset for å unngå z-fighting
-    };
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 14px;
+      font-weight: 600;
+    }
 
-    // Punkt der teksten skal være (litt høyere)
-    const textPos = {
-      x: centerX,
-      y: centerY,
-      z: topZ + 0.30, // juster høyde her
-    };
+    header .status {
+      margin-left: auto;
+      font-weight: 400;
+      font-size: 12px;
+      opacity: 0.8;
+    }
 
-    // === Pick-objekter ===
-    const anchorPick = {
-      modelId: modelId,
-      objectId: runtimeId,
-      type: "point",
-      positionX: anchorPos.x,
-      positionY: anchorPos.y,
-      positionZ: anchorPos.z
-    };
+    main {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
 
-    const textPick = {
-      modelId: modelId,
-      objectId: runtimeId,
-      type: "point",
-      positionX: textPos.x,
-      positionY: textPos.y,
-      positionZ: textPos.z
-    };
+    .card {
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+      padding: 10px 12px;
+      font-size: 13px;
+    }
 
-    // === Tekst-markup (skjermorientert) ===
-    const textMarkup = {
-      start: textPick,
-      end: textPick,
-      text: text,
-      color: { r: 55, g: 130, b: 70, a: 255 },
-      type: "Text"
-    };
+    .label {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
 
-    // === Linje (leader) markup ===
-    const lineMarkup = {
-      start: textPick,
-      end: anchorPick,
-      color: { r: 55, g: 130, b: 70, a: 255 },
-      type: "Line"
-    };
+    .value {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 13px;
+    }
 
-    // Fjern gamle markups
-    await API.markup.removeMarkups(undefined);
+    .muted {
+      opacity: 0.75;
+    }
 
-    // Legg til både tekst og linje
-    await API.markup.addTextMarkup([textMarkup]);
-    await API.markup.addLineMarkup([lineMarkup]);
+    .small {
+      font-size: 12px;
+    }
 
-    console.log("La til tekst + leader line:", { textMarkup, lineMarkup });
+    #error {
+      color: #b91c1c;
+      font-size: 12px;
+      min-height: 16px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    Kote Bunn Innvendig Kum (BIK)
+    <span class="status" id="status">Kobler til Trimble Connect…</span>
+  </header>
 
-  } catch (e) {
-    console.error("Feil ved opprettelse av tekst/linje markup:", e);
-  }
-}
+  <main>
+    <div class="card">
+      <div class="label">Valgt objekt</div>
+      <div id="objectInfo" class="value small muted">
+        Ingen objekt valgt. Klikk på en kum i modellen.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
+      <div id="bikValue" class="value">Ikke funnet</div>
+      <div id="bikPset" class="muted small"></div>
+      <div id="bikRaw" class="muted small"></div>
+    </div>
+
+    <div id="error"></div>
+  </main>
+
+  <script>
+    let API = null;
+
+    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
+
+    function normalizeName(name) {
+      return (name || "")
+        .toString()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    }
+
+    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
+
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function setError(msg) {
+      document.getElementById("error").textContent = msg || "";
+    }
+
+    function setObjectInfo(text) {
+      document.getElementById("objectInfo").textContent = text;
+    }
+
+    function setBik(display, psetName, raw) {
+      document.getElementById("bikValue").textContent = display || "Ikke funnet";
+      document.getElementById("bikPset").textContent =
+        psetName ? `Funnet i PropertySet: ${psetName}` : "";
+      document.getElementById("bikRaw").textContent =
+        raw ? `Raw-verdi: ${raw}` : "";
+    }
+
+    async function connectToWorkspace() {
+      API = await TrimbleConnectWorkspace.connect(
+        window.parent,
+        onWorkspaceEvent,
+        30000
+      );
+      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
+      console.log("Workspace API tilkoblet:", API);
+    }
+
+    function onWorkspaceEvent(event, payload) {
+      console.log("Event fra Workspace:", event, payload);
+
+      if (event === "viewer.onSelectionChanged" || event === "selection-changed") {
+        handleSelectionChanged(payload);
+      }
+    }
+
+    async function handleSelectionChanged(payload) {
+      try {
+        setError("");
+
+        const selection = (payload && payload.data) || [];
+        if (!selection.length) {
+          setStatus("Ingen objekt valgt.");
+          setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
+          setBik("Ikke funnet", "", "");
+          await clearBikTextMarkup();
+          return;
+        }
+
+        const first = selection[0];
+        const modelId = first.modelId;
+        const runtimeIds = first.objectRuntimeIds || [];
+
+        if (!modelId || !runtimeIds.length) {
+          setStatus("Ingen gyldig objekt i utvalget.");
+          setObjectInfo("Ingen gyldig objekt i utvalget.");
+          setBik("Ikke funnet", "", "");
+          await clearBikTextMarkup();
+          return;
+        }
+
+        const runtimeId = runtimeIds[0];
+
+        setObjectInfo(
+          `ModellId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${
+            first.class || "ukjent"
+          }`
+        );
+        setStatus("Leser egenskaper for valgt objekt…");
+
+        const propsArray = await API.viewer.getObjectProperties(modelId, [
+          runtimeId,
+        ]);
+        console.log("getObjectProperties result:", propsArray);
+
+        if (!propsArray || !propsArray.length) {
+          setStatus("Fant ingen egenskaper for objektet.");
+          setBik("Ingen data", "", "");
+          await clearBikTextMarkup();
+          return;
+        }
+
+        const objProps = propsArray[0];
+        const result = findBikValue(objProps);
+
+        if (!result) {
+          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
+          setBik("Ikke funnet", "", "");
+          await clearBikTextMarkup();
+        } else {
+          const { value, psetName } = result;
+          const num = parseFloat(value);
+          const display = isNaN(num) ? `${value}` : `${num}`;
+          setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
+          setBik(display, psetName, `${value}`);
+
+          // Lag / oppdater 3D-tekst ved kummen (skjerm-orientert tekstmarkup)
+          await updateBikTextMarkup(modelId, runtimeId, `BIK: ${display}`);
+        }
+      } catch (err) {
+        console.error("Feil i handleSelectionChanged:", err);
+        setError("Feil ved lesing av egenskaper: " + (err.message || err));
+        setStatus("Kunne ikke lese BIK-verdi.");
+      }
+    }
+
+    // Finn BIK-verdi i alle propertySets
+    function findBikValue(objProps) {
+      const psets = objProps.properties || [];
+
+      for (const pset of psets) {
+        const psetName = pset.set || "";
+        const props = pset.properties || [];
+
+        for (const p of props) {
+          const propNameNorm = normalizeName(p.name);
+          if (propNameNorm === TARGET_PROP_NORM) {
+            console.log("Fant BIK-property:", p, "i Pset:", psetName);
+            return {
+              value: p.value,
+              psetName: psetName,
+            };
+          }
+        }
+      }
+
+      console.log("Fant ikke BIK-property i objProps:", objProps);
+      return null;
+    }
+
+    // Fjern tekst-markups som extensionen har laget
+    async function clearBikTextMarkup() {
+      if (!API || !API.markup) return;
+      try {
+        // undefined => fjern alle markups
+        await API.markup.removeMarkups(undefined);
+      } catch (e) {
+        console.warn("Klarte ikke å fjerne markups:", e);
+      }
+    }
+
+    // Lag tekst-markup ved valgt kum.
+    // Tekstmarkup i Connect er skjermorientert (ortogonal til vinduet)
+    // men anker seg i punktet vi gir som MarkupPick.
+    async function updateBikTextMarkup(modelId, runtimeId, text) {
+      if (!API || !API.viewer || !API.markup) return;
+
+      try {
+        const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [
+          runtimeId,
+        ]);
+        if (!boxes || !boxes.length) {
+          console.warn("Ingen bounding box for objekt:", modelId, runtimeId);
+          return;
+        }
+
+        const bbox = boxes[0].boundingBox;
+        const centerX = (bbox.min.x + bbox.max.x) / 2;
+        const centerY = (bbox.min.y + bbox.max.y) / 2;
+        const topZ = bbox.max.z;
+
+        // Plasser teksten litt over toppen av kummen
+        const textPos = {
+          x: centerX,
+          y: centerY,
+          z: topZ + 0.2, // juster offset om du vil ha den høyere/lavere
+        };
+
+        /** @type {import('trimble-connect-workspace-api').MarkupPick} */
+        const pick = {
+          modelId: modelId,
+          objectId: runtimeId,
+          type: "point",
+          positionX: textPos.x,
+          positionY: textPos.y,
+          positionZ: textPos.z,
+        };
+
+        const textMarkup = {
+          start: pick,
+          end: pick,
+          text: text,
+          color: { r: 55, g: 130, b: 70, a: 255 },
+        };
+
+        // Fjern gammel tekst og legg til ny
+        await API.markup.removeMarkups(undefined);
+        await API.markup.addTextMarkup([textMarkup]);
+
+        console.log("La til BIK-tekstmarkup:", textMarkup);
+      } catch (e) {
+        console.error("Feil ved opprettelse av tekstmarkup:", e);
+      }
+    }
+
+    (async () => {
+      try {
+        await connectToWorkspace();
+      } catch (err) {
+        console.error(err);
+        setError(
+          "Klarte ikke å koble til Workspace API: " + (err.message || err)
+        );
+        setStatus("Feil.");
+      }
+    })();
+  </script>
+</body>
+</html>
