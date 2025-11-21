@@ -62,8 +62,7 @@
     }
 
     .value {
-      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
-        "Liberation Mono", "Courier New", monospace;
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 13px;
     }
 
@@ -98,20 +97,9 @@
     </div>
 
     <div class="card">
-      <div class="label">Objektnavn & Kote Bunn Innvendig Kum (BIK)</div>
-      <div class="muted small">Verdier leses fra WS_Pset.</div>
-
-      <div style="margin-top:8px;">
-        <div class="muted small">Objektnavn</div>
-        <div id="objNameValue" class="value">–</div>
-      </div>
-
-      <div style="margin-top:8px;">
-        <div class="muted small">Kote Bunn Innvendig Kum (BIK)</div>
-        <div id="bikValue" class="value">Ikke funnet</div>
-      </div>
-
-      <div id="bikPset" class="muted small" style="margin-top:4px;"></div>
+      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
+      <div id="bikValue" class="value">Ikke funnet</div>
+      <div id="bikPset" class="muted small"></div>
       <div id="bikRaw" class="muted small"></div>
     </div>
 
@@ -121,9 +109,10 @@
   <script>
     let API = null;
 
-    const TARGET_PROP_BIK = "Kote Bunn Innvendig Kum (BIK)";
-    const TARGET_PROP_NAME = "Objektnavn";
+    // Navnet på propertyen vi er ute etter (originalt IFC-navn)
+    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
 
+    // Robust normalisering: fjerner alle tegn som ikke er A–Z/0–9
     function normalizeName(name) {
       return (name || "")
         .toString()
@@ -132,8 +121,7 @@
         .replace(/^_+|_+$/g, "");
     }
 
-    const TARGET_PROP_BIK_NORM = normalizeName(TARGET_PROP_BIK);
-    const TARGET_PROP_NAME_NORM = normalizeName(TARGET_PROP_NAME);
+    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
     function setStatus(msg) {
       document.getElementById("status").textContent = msg;
@@ -147,18 +135,12 @@
       document.getElementById("objectInfo").textContent = text;
     }
 
-    function setNameAndBik(objName, bikDisplay, psetName, rawBik) {
-      document.getElementById("objNameValue").textContent =
-        objName && objName !== "" ? objName : "–";
-
-      document.getElementById("bikValue").textContent =
-        bikDisplay && bikDisplay !== "" ? bikDisplay : "Ikke funnet";
-
+    function setBik(display, psetName, raw) {
+      document.getElementById("bikValue").textContent = display || "Ikke funnet";
       document.getElementById("bikPset").textContent =
         psetName ? `Funnet i PropertySet: ${psetName}` : "";
-
       document.getElementById("bikRaw").textContent =
-        rawBik ? `Raw-verdi BIK: ${rawBik}` : "";
+        raw ? `Raw-verdi: ${raw}` : "";
     }
 
     async function connectToWorkspace() {
@@ -167,7 +149,7 @@
         onWorkspaceEvent,
         30000
       );
-      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese data.");
+      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
       console.log("Workspace API tilkoblet:", API);
     }
 
@@ -187,8 +169,7 @@
         if (!selection.length) {
           setStatus("Ingen objekt valgt.");
           setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
-          setNameAndBik("", "", "", "");
-          await clearTextMarkups();
+          setBik("Ikke funnet", "", "");
           return;
         }
 
@@ -199,66 +180,52 @@
         if (!modelId || !runtimeIds.length) {
           setStatus("Ingen gyldig objekt i utvalget.");
           setObjectInfo("Ingen gyldig objekt i utvalget.");
-          setNameAndBik("", "", "", "");
-          await clearTextMarkups();
+          setBik("Ikke funnet", "", "");
           return;
         }
 
         const runtimeId = runtimeIds[0];
 
         setObjectInfo(
-          `ModellId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${
-            first.class || "ukjent"
-          }`
+          `ModellId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${first.class || "ukjent"}`
         );
         setStatus("Leser egenskaper for valgt objekt…");
 
-        const propsArray = await API.viewer.getObjectProperties(modelId, [
-          runtimeId,
-        ]);
+        const propsArray = await API.viewer.getObjectProperties(
+          modelId,
+          [runtimeId]
+        );
         console.log("getObjectProperties result:", propsArray);
 
         if (!propsArray || !propsArray.length) {
           setStatus("Fant ingen egenskaper for objektet.");
-          setNameAndBik("", "", "", "");
-          await clearTextMarkups();
+          setBik("Ingen data", "", "");
           return;
         }
 
         const objProps = propsArray[0];
-        const result = findNameAndBik(objProps);
+        const result = findBikValue(objProps);
 
-        if (!result || !result.bikValue) {
-          setStatus(`Fant ikke '${TARGET_PROP_BIK}' på dette objektet.`);
-          setNameAndBik(result ? result.objName || "" : "", "", "", "");
-          await clearTextMarkups();
+        if (!result) {
+          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
+          setBik("Ikke funnet", "", "");
         } else {
-          const { bikValue, psetName, objName } = result;
-          const num = parseFloat(bikValue);
-          const display = isNaN(num) ? `${bikValue}` : `${num}`;
-          setStatus(`Fant '${TARGET_PROP_BIK}' på dette objektet.`);
-          setNameAndBik(objName || "", display, psetName, `${bikValue}`);
-
-          const textLabel = objName
-            ? `${objName} – BIK: ${display}`
-            : `BIK: ${display}`;
-
-          await showTextAboveManhole(modelId, runtimeId, textLabel);
+          const { value, psetName } = result;
+          const num = parseFloat(value);
+          const display = isNaN(num) ? `${value}` : `${num}`;
+          setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
+          setBik(display, psetName, `${value}`);
         }
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
-        setStatus("Kunne ikke lese verdier.");
+        setStatus("Kunne ikke lese BIK-verdi.");
       }
     }
 
-    // Finn både Objektnavn og BIK i alle propertySets (typisk WS_Pset)
-    function findNameAndBik(objProps) {
+    // Leter etter propertyen i ALLE propertySets
+    function findBikValue(objProps) {
       const psets = objProps.properties || [];
-
-      let bikValue = null;
-      let objName = null;
-      let psetNameForBik = null;
 
       for (const pset of psets) {
         const psetName = pset.set || "";
@@ -266,86 +233,18 @@
 
         for (const p of props) {
           const propNameNorm = normalizeName(p.name);
-
-          if (propNameNorm === TARGET_PROP_BIK_NORM) {
-            bikValue = p.value;
-            psetNameForBik = psetName;
-          }
-          if (propNameNorm === TARGET_PROP_NAME_NORM) {
-            objName = p.value;
+          if (propNameNorm === TARGET_PROP_NORM) {
+            console.log("Fant BIK-property:", p, "i Pset:", psetName);
+            return {
+              value: p.value,
+              psetName: psetName
+            };
           }
         }
       }
 
-      console.log("Resultat findNameAndBik:", {
-        bikValue,
-        objName,
-        psetNameForBik,
-      });
-
-      if (!bikValue && !objName) return null;
-      return {
-        bikValue,
-        objName,
-        psetName: psetNameForBik,
-      };
-    }
-
-    // Fjern alle tidligere tekst-markups
-    async function clearTextMarkups() {
-      if (!API || !API.markup) return;
-      try {
-        await API.markup.removeMarkups(undefined);
-      } catch (e) {
-        console.warn("Klarte ikke å fjerne markups:", e);
-      }
-    }
-
-    // VIS KUN 3D-TEKST – INGEN LINJE NÅ
-    async function showTextAboveManhole(modelId, runtimeId, text) {
-      if (!API || !API.viewer || !API.markup) return;
-
-      try {
-        const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [
-          runtimeId,
-        ]);
-        if (!boxes || !boxes.length) {
-          console.warn("Ingen bounding box for objekt:", modelId, runtimeId);
-          return;
-        }
-
-        const bbox = boxes[0].boundingBox;
-
-        // Anta at modellens koordinater er i meter → konverter til mm for markups
-        const centerX_m = (bbox.min.x + bbox.max.x) / 2;
-        const centerY_m = (bbox.min.y + bbox.max.y) / 2;
-        const topZ_m    =  bbox.max.z;
-
-        const factor = 1000.0; // meter → mm
-
-        const pick = {
-          modelId: modelId,
-          objectId: runtimeId,
-          type: "point",
-          positionX: centerX_m * factor,
-          positionY: centerY_m * factor,
-          positionZ: (topZ_m + 0.30) * factor   // 0.30 m over toppen
-        };
-
-        const textMarkup = {
-          start: pick,
-          end: pick,
-          text: text,
-          color: { r: 55, g: 130, b: 70, a: 255 }
-        };
-
-        await API.markup.removeMarkups(undefined);
-        const res = await API.markup.addTextMarkup([textMarkup]);
-        console.log("TextMarkup lagt til:", res);
-
-      } catch (e) {
-        console.error("Feil ved showTextAboveManhole:", e);
-      }
+      console.log("Fant ikke BIK-property i objProps:", objProps);
+      return null;
     }
 
     (async () => {
@@ -353,9 +252,7 @@
         await connectToWorkspace();
       } catch (err) {
         console.error(err);
-        setError(
-          "Klarte ikke å koble til Workspace API: " + (err.message || err)
-        );
+        setError("Klarte ikke å koble til Workspace API: " + (err.message || err));
         setStatus("Feil.");
       }
     })();
