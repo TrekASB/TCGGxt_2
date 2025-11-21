@@ -158,7 +158,7 @@
       if (!API.markup || typeof API.markup.addTextMarkup !== "function") {
         setStatus("Tilkoblet (MarkupAPI ikke tilgjengelig – 3D-tekst støttes kanskje ikke).");
       } else {
-        setStatus("Tilkoblet. Klikk på en kum i modellen for å vise BIK + 3D-tekst.");
+        setStatus("Tilkoblet. Klikk på en kum i modellen for å vise Objektnavn + BIK i 3D.");
       }
     }
 
@@ -263,15 +263,32 @@
       return null;
     }
 
-    // ---------- Finn Objektnavn ----------
+    // ---------- Finn Objektnavn (robust, med fokus på WS_Pset) ----------
     function findObjectName(objProps) {
       const psets = objProps.properties || [];
+
       for (const pset of psets) {
+        const psetNameRaw = pset.set || "";
+        const psetNameNorm = normalizeName(psetNameRaw);
         const props = pset.properties || [];
+
         for (const p of props) {
-          const norm = normalizeName(p.name);
+          const nameRaw = p.name || "";
+          const norm = normalizeName(nameRaw);
+
+          // Direkte match
           if (norm === "OBJEKTNAVN") {
-            return p.value || "";
+            return String(p.value || "");
+          }
+
+          // Inneholder OBJEKTNAVN et sted
+          if (norm.indexOf("OBJEKTNAVN") >= 0) {
+            return String(p.value || "");
+          }
+
+          // Spesifikt WS_Pset + "Objektnavn"
+          if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "objektnavn") {
+            return String(p.value || "");
           }
         }
       }
@@ -313,24 +330,24 @@
         const min = bb.min;
         const max = bb.max;
 
-        // Senter i XY, og top i Z
+        // Antar Y er opp:
         const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
-        const centerY_mm = ((min.y + max.y) / 2.0) * 1000.0;
-        const topZ_mm    = (max.z) * 1000.0;
+        const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
+        const topY_mm    = (max.y) * 1000.0;
 
-        // Start litt over toppen, og trekk linja videre oppover
+        // Start litt over toppen, trekk linjen loddrett opp
         const startPick = {
           positionX: centerX_mm,
-          positionY: centerY_mm,
-          positionZ: topZ_mm + 200.0,   // 20 cm over top
+          positionY: topY_mm + 200.0,    // 0.2 m over topp
+          positionZ: centerZ_mm,
           modelId: modelId,
           objectId: runtimeId
         };
 
         const endPick = {
           positionX: centerX_mm,
-          positionY: centerY_mm,
-          positionZ: topZ_mm + 1200.0,  // 1 m over start
+          positionY: topY_mm + 1200.0,   // 1.2 m over topp
+          positionZ: centerZ_mm,
           modelId: modelId,
           objectId: runtimeId
         };
