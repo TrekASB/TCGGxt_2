@@ -109,14 +109,12 @@
   <script>
     let API = null;
 
-    // Mål-property
     const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
     const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
-    // Holder id til siste tekst-markup
     let lastTextMarkupId = null;
 
-    // ---------- UI helpers ----------
+    // ---------- helpers ----------
     function normalizeName(name) {
       return (name || "")
         .toString()
@@ -145,7 +143,7 @@
         raw ? `Raw-verdi: ${raw}` : "";
     }
 
-    // ---------- Workspace init ----------
+    // ---------- workspace ----------
     async function connectToWorkspace() {
       API = await TrimbleConnectWorkspace.connect(
         window.parent,
@@ -158,7 +156,7 @@
       if (!API.markup || typeof API.markup.addTextMarkup !== "function") {
         setStatus("Tilkoblet (MarkupAPI ikke tilgjengelig – 3D-tekst støttes kanskje ikke).");
       } else {
-        setStatus("Tilkoblet. Klikk på en kum i modellen for å vise Objektnavn + BIK i 3D.");
+        setStatus("Tilkoblet. Klikk på en kum for å vise Objektnavn + Kumtype + BIK i 3D.");
       }
     }
 
@@ -170,7 +168,7 @@
       }
     }
 
-    // ---------- Håndter valg av objekt ----------
+    // ---------- selection ----------
     async function handleSelectionChanged(payload) {
       try {
         setError("");
@@ -226,12 +224,14 @@
         const { value, psetName } = result;
         const num = parseFloat(value);
         const display = isNaN(num) ? `${value}` : `${num}`;
+
         const objectName = findObjectName(objProps);
+        const kumtype    = findKumtype(objProps);
 
         setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
         setBik(display, psetName, `${value}`);
 
-        await showBikTextMarkup(modelId, runtimeId, display, objectName);
+        await showBikTextMarkup(modelId, runtimeId, display, objectName, kumtype);
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
@@ -239,7 +239,7 @@
       }
     }
 
-    // ---------- Finn BIK-verdi ----------
+    // ---------- property lookup ----------
     function findBikValue(objProps) {
       const psets = objProps.properties || [];
 
@@ -263,7 +263,6 @@
       return null;
     }
 
-    // ---------- Finn Objektnavn (robust, med fokus på WS_Pset) ----------
     function findObjectName(objProps) {
       const psets = objProps.properties || [];
 
@@ -276,17 +275,14 @@
           const nameRaw = p.name || "";
           const norm = normalizeName(nameRaw);
 
-          // Direkte match
           if (norm === "OBJEKTNAVN") {
             return String(p.value || "");
           }
 
-          // Inneholder OBJEKTNAVN et sted
           if (norm.indexOf("OBJEKTNAVN") >= 0) {
             return String(p.value || "");
           }
 
-          // Spesifikt WS_Pset + "Objektnavn"
           if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "objektnavn") {
             return String(p.value || "");
           }
@@ -295,7 +291,39 @@
       return "";
     }
 
-    // ---------- Markup-hjelpere ----------
+    // Ny: Kumtype
+    function findKumtype(objProps) {
+      const psets = objProps.properties || [];
+
+      for (const pset of psets) {
+        const psetNameRaw = pset.set || "";
+        const psetNameNorm = normalizeName(psetNameRaw);
+        const props = pset.properties || [];
+
+        for (const p of props) {
+          const nameRaw = p.name || "";
+          const norm = normalizeName(nameRaw);
+
+          // Direkte match på Kumtype
+          if (norm === "KUMTYPE") {
+            return String(p.value || "");
+          }
+
+          // Inneholder KUMTYPE (for sikkerhets skyld)
+          if (norm.indexOf("KUMTYPE") >= 0) {
+            return String(p.value || "");
+          }
+
+          // Hvis det ligger i WS_Pset som "Kumtype"
+          if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "kumtype") {
+            return String(p.value || "");
+          }
+        }
+      }
+      return "";
+    }
+
+    // ---------- markup helpers ----------
     async function clearTextMarkup() {
       try {
         if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") {
@@ -310,14 +338,13 @@
       }
     }
 
-    async function showBikTextMarkup(modelId, runtimeId, bikDisplay, objectName) {
+    async function showBikTextMarkup(modelId, runtimeId, bikDisplay, objectName, kumtype) {
       if (!API || !API.markup || typeof API.markup.addTextMarkup !== "function") {
         console.warn("MarkupAPI ikke tilgjengelig – kan ikke tegne 3D-tekst.");
         return;
       }
 
       try {
-        // Hent bounding box i meter
         const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
         console.log("getObjectBoundingBoxes result:", boxes);
 
@@ -330,33 +357,36 @@
         const min = bb.min;
         const max = bb.max;
 
-        // Antar Y er opp:
+        // X/Y = senter i plan, Z = topp kum
         const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
-        const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
-        const topY_mm    = (max.y) * 1000.0;
+        const centerY_mm = ((min.y + max.y) / 2.0) * 1000.0;
+        const topZ_mm    = (max.z) * 1000.0;
 
-        // Start litt over toppen, trekk linjen loddrett opp
+        // Nær kummen: linje 0.4 m høy, start 0.15 m over toppen
         const startPick = {
           positionX: centerX_mm,
-          positionY: topY_mm + 200.0,    // 0.2 m over topp
-          positionZ: centerZ_mm,
+          positionY: centerY_mm,
+          positionZ: topZ_mm + 150.0,   // 0.15 m over topp
           modelId: modelId,
           objectId: runtimeId
         };
 
         const endPick = {
           positionX: centerX_mm,
-          positionY: topY_mm + 1200.0,   // 1.2 m over topp
-          positionZ: centerZ_mm,
+          positionY: centerY_mm,
+          positionZ: topZ_mm + 550.0,   // 0.55 m over topp (tekst rett over senter)
           modelId: modelId,
           objectId: runtimeId
         };
 
         await clearTextMarkup();
 
-        const text =
-          (objectName ? objectName + "\n" : "") +
-          `BIK: ${bikDisplay}`;
+        const lines = [];
+        if (objectName) lines.push(objectName);
+        if (kumtype)   lines.push(kumtype);
+        lines.push(`BIK: ${bikDisplay}`);
+
+        const text = lines.join("\n");
 
         const textMarkup = {
           start: startPick,
@@ -372,14 +402,14 @@
           lastTextMarkupId = created[0].id;
         }
 
-        setStatus("Viser 3D-tekst (sjekk at markups/annotations er slått på i viewer).");
+        setStatus("Viser 3D-tekst rett over kummen (Objektnavn, Kumtype, BIK).");
       } catch (err) {
         console.error("Feil ved opprettelse av text markup:", err);
         setError("Klarte ikke å lage 3D-tekst: " + (err.message || err));
       }
     }
 
-    // ---------- Oppstart ----------
+    // ---------- oppstart ----------
     (async () => {
       try {
         await connectToWorkspace();
