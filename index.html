@@ -98,17 +98,9 @@
     </div>
 
     <div class="card">
-      <div class="label">Objektnavn & Kote Bunn Innvendig Kum (BIK)</div>
-      <div class="muted small">Verdier leses fra WS_Pset.</div>
-      <div style="margin-top:8px;">
-        <div class="muted small">Objektnavn</div>
-        <div id="objNameValue" class="value">–</div>
-      </div>
-      <div style="margin-top:8px;">
-        <div class="muted small">Kote Bunn Innvendig Kum (BIK)</div>
-        <div id="bikValue" class="value">Ikke funnet</div>
-      </div>
-      <div id="bikPset" class="muted small" style="margin-top:4px;"></div>
+      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
+      <div id="bikValue" class="value">Ikke funnet</div>
+      <div id="bikPset" class="muted small"></div>
       <div id="bikRaw" class="muted small"></div>
     </div>
 
@@ -118,8 +110,7 @@
   <script>
     let API = null;
 
-    const TARGET_PROP_BIK = "Kote Bunn Innvendig Kum (BIK)";
-    const TARGET_PROP_NAME = "Objektnavn";
+    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
 
     function normalizeName(name) {
       return (name || "")
@@ -129,8 +120,7 @@
         .replace(/^_+|_+$/g, "");
     }
 
-    const TARGET_PROP_BIK_NORM = normalizeName(TARGET_PROP_BIK);
-    const TARGET_PROP_NAME_NORM = normalizeName(TARGET_PROP_NAME);
+    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
 
     function setStatus(msg) {
       document.getElementById("status").textContent = msg;
@@ -144,18 +134,12 @@
       document.getElementById("objectInfo").textContent = text;
     }
 
-    function setNameAndBik(objName, bikDisplay, psetName, rawBik) {
-      document.getElementById("objNameValue").textContent =
-        objName && objName !== "" ? objName : "–";
-
-      document.getElementById("bikValue").textContent =
-        bikDisplay && bikDisplay !== "" ? bikDisplay : "Ikke funnet";
-
+    function setBik(display, psetName, raw) {
+      document.getElementById("bikValue").textContent = display || "Ikke funnet";
       document.getElementById("bikPset").textContent =
         psetName ? `Funnet i PropertySet: ${psetName}` : "";
-
       document.getElementById("bikRaw").textContent =
-        rawBik ? `Raw-verdi BIK: ${rawBik}` : "";
+        raw ? `Raw-verdi: ${raw}` : "";
     }
 
     async function connectToWorkspace() {
@@ -164,7 +148,7 @@
         onWorkspaceEvent,
         30000
       );
-      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese data.");
+      setStatus("Tilkoblet. Klikk på en kum i modellen for å lese BIK.");
       console.log("Workspace API tilkoblet:", API);
     }
 
@@ -184,7 +168,7 @@
         if (!selection.length) {
           setStatus("Ingen objekt valgt.");
           setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
-          setNameAndBik("", "", "", "");
+          setBik("Ikke funnet", "", "");
           await clearBikTextMarkup();
           return;
         }
@@ -196,7 +180,7 @@
         if (!modelId || !runtimeIds.length) {
           setStatus("Ingen gyldig objekt i utvalget.");
           setObjectInfo("Ingen gyldig objekt i utvalget.");
-          setNameAndBik("", "", "", "");
+          setBik("Ikke funnet", "", "");
           await clearBikTextMarkup();
           return;
         }
@@ -217,45 +201,38 @@
 
         if (!propsArray || !propsArray.length) {
           setStatus("Fant ingen egenskaper for objektet.");
-          setNameAndBik("", "", "", "");
+          setBik("Ingen data", "", "");
           await clearBikTextMarkup();
           return;
         }
 
         const objProps = propsArray[0];
-        const result = findNameAndBik(objProps);
+        const result = findBikValue(objProps);
 
-        if (!result || !result.bikValue) {
-          setStatus(`Fant ikke '${TARGET_PROP_BIK}' på dette objektet.`);
-          setNameAndBik(result ? result.objName || "" : "", "", "", "");
+        if (!result) {
+          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
+          setBik("Ikke funnet", "", "");
           await clearBikTextMarkup();
         } else {
-          const { bikValue, psetName, objName } = result;
-          const num = parseFloat(bikValue);
-          const display = isNaN(num) ? `${bikValue}` : `${num}`;
-          setStatus(`Fant '${TARGET_PROP_BIK}' på dette objektet.`);
-          setNameAndBik(objName || "", display, psetName, `${bikValue}`);
+          const { value, psetName } = result;
+          const num = parseFloat(value);
+          const display = isNaN(num) ? `${value}` : `${num}`;
+          setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
+          setBik(display, psetName, `${value}`);
 
-          const textLabel = objName
-            ? `${objName} – BIK: ${display}`
-            : `BIK: ${display}`;
-
-          await updateBikTextMarkup(modelId, runtimeId, textLabel);
+          // Lag / oppdater 3D tekst ved kummen
+          await updateBikTextMarkup(modelId, runtimeId, `BIK: ${display}`);
         }
       } catch (err) {
         console.error("Feil i handleSelectionChanged:", err);
         setError("Feil ved lesing av egenskaper: " + (err.message || err));
-        setStatus("Kunne ikke lese verdier.");
+        setStatus("Kunne ikke lese BIK-verdi.");
       }
     }
 
-    // Finn både Objektnavn og BIK i alle propertySets (typisk WS_Pset)
-    function findNameAndBik(objProps) {
+    // Finn BIK-verdi i alle propertySets
+    function findBikValue(objProps) {
       const psets = objProps.properties || [];
-
-      let bikValue = null;
-      let objName = null;
-      let psetNameForBik = null;
 
       for (const pset of psets) {
         const psetName = pset.set || "";
@@ -263,46 +240,36 @@
 
         for (const p of props) {
           const propNameNorm = normalizeName(p.name);
-
-          if (propNameNorm === TARGET_PROP_BIK_NORM) {
-            bikValue = p.value;
-            psetNameForBik = psetName;
-          }
-          if (propNameNorm === TARGET_PROP_NAME_NORM) {
-            objName = p.value;
+          if (propNameNorm === TARGET_PROP_NORM) {
+            console.log("Fant BIK-property:", p, "i Pset:", psetName);
+            return {
+              value: p.value,
+              psetName: psetName,
+            };
           }
         }
       }
 
-      console.log("Resultat findNameAndBik:", {
-        bikValue,
-        objName,
-        psetNameForBik,
-      });
-
-      if (!bikValue && !objName) return null;
-      return {
-        bikValue,
-        objName,
-        psetName: psetNameForBik,
-      };
+      console.log("Fant ikke BIK-property i objProps:", objProps);
+      return null;
     }
 
-    // Fjern tekst-/linje-markups som extensionen har laget
+    // Fjern alle tekst-markups som extensionen har laget
     async function clearBikTextMarkup() {
       if (!API || !API.markup) return;
       try {
-        await API.markup.removeMarkups(undefined);
+        await API.markup.removeMarkups(undefined); // undefined => fjern alle markups
       } catch (e) {
         console.warn("Klarte ikke å fjerne markups:", e);
       }
     }
 
-    // Tekst + (forsøkt) leader-linje. Teksten skal fungere selv om line-API ikke finnes.
+    // Lag 3D tekst ved valgt kum
     async function updateBikTextMarkup(modelId, runtimeId, text) {
       if (!API || !API.viewer || !API.markup) return;
 
       try {
+        // Hent bounding box for objektet
         const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [
           runtimeId,
         ]);
@@ -316,70 +283,37 @@
         const centerY = (bbox.min.y + bbox.max.y) / 2;
         const topZ = bbox.max.z;
 
-        const anchorPos = {
-          x: centerX,
-          y: centerY,
-          z: topZ + 0.01,
-        };
-
+        // Plasser teksten litt over toppen av kummen (0.2 m opp)
         const textPos = {
           x: centerX,
           y: centerY,
-          z: topZ + 0.30,
+          z: topZ + 0.2,
         };
 
-        const anchorPick = {
+        // MarkupPick bruker mm, så vi ganger med 1000
+        const pick = {
           modelId: modelId,
           objectId: runtimeId,
           type: "point",
-          positionX: anchorPos.x,
-          positionY: anchorPos.y,
-          positionZ: anchorPos.z,
-        };
-
-        const textPick = {
-          modelId: modelId,
-          objectId: runtimeId,
-          type: "point",
-          positionX: textPos.x,
-          positionY: textPos.y,
-          positionZ: textPos.z,
+          positionX: textPos.x * 1000,
+          positionY: textPos.y * 1000,
+          positionZ: textPos.z * 1000,
         };
 
         const textMarkup = {
-          start: textPick,
-          end: textPick,
+          start: pick,
+          end: pick,
           text: text,
-          color: { r: 55, g: 130, b: 70, a: 255 }
+          color: { r: 55, g: 130, b: 70, a: 255 }, // grønn-ish
         };
 
-        const lineMarkup = {
-          start: textPick,
-          end: anchorPick,
-          color: { r: 55, g: 130, b: 70, a: 255 }
-        };
-
+        // Fjern tidligere markups og legg til ny
         await API.markup.removeMarkups(undefined);
-
-        // Tekst – dette skal vi være sikre på at fungerer
         await API.markup.addTextMarkup([textMarkup]);
 
-        // Prøv line-markup, men la teksten få leve hvis dette feiler
-        try {
-          if (typeof API.markup.addLineMarkup === "function") {
-            await API.markup.addLineMarkup([lineMarkup]);
-          } else if (typeof API.markup.addLineMarkups === "function") {
-            await API.markup.addLineMarkups([lineMarkup]);
-          } else {
-            console.warn("Line-markup API finnes ikke på denne versjonen av Trimble Connect.");
-          }
-        } catch (lineErr) {
-          console.warn("Feil ved opprettelse av line-markup (ignorerer, beholder tekst):", lineErr);
-        }
-
-        console.log("La til tekst (og ev. leader line):", { textMarkup, lineMarkup });
+        console.log("La til BIK-tekstmarkup:", textMarkup);
       } catch (e) {
-        console.error("Feil ved opprettelse av tekst/linje markup:", e);
+        console.error("Feil ved opprettelse av tekstmarkup:", e);
       }
     }
 
