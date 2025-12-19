@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty Checker</title>
+  <title>MultiProperty Labeler</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -13,8 +13,10 @@
     }
     body{margin:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#e4edf5 100%);color:#333;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
     header{background:rgba(255,255,255,.95);backdrop-filter:blur(10px);padding:18px 24px;border-bottom:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.08);display:flex;flex-wrap:wrap;align-items:center;gap:18px;position:relative;z-index:10;}
-    .title-container{display:flex;align-items:center;gap:12px;flex:1;min-width:300px;}
-    .logo{width:144px;height:144px;border-radius:8px;object-fit:contain;box-shadow:0 2px 6px rgba(0,0,0,.1);background:#fff;padding:4px;}
+    .title-container{display:flex;align-items:center;gap:12px;flex:1;min-width:320px;}
+    .logo-wrap{display:flex;align-items:center;justify-content:center;width:160px;height:160px;background:#fff;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.1);border:1px solid #eee;overflow:hidden;}
+    .logo{width:144px;height:144px;object-fit:contain;}
+    .logo-fallback{font-size:14px;color:#111;font-weight:700;text-align:center;padding:10px;}
     .title-block{display:flex;flex-direction:column;}
     .title{font-size:22px;font-weight:700;color:var(--primary);margin:0;}
     .org{font-size:15px;font-weight:600;color:var(--dark);margin-top:-4px;}
@@ -23,10 +25,9 @@
 
     label{font-weight:600;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap;}
     select,button,input[type="number"]{
-      padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;
-      background:#fff;
+      padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;background:#fff;
     }
-    select{min-width:180px;max-width:260px;}
+    select{min-width:180px;max-width:320px;}
     select:focus,input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,105,217,.15);outline:none;}
     button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;}
     button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.15);}
@@ -35,22 +36,18 @@
     button#applyLabelsButton{background:#00c2cb;} button#applyLabelsButton:hover:not(:disabled){background:#00a0aa;}
     button#clearLabelsButton{background:var(--danger);} button#clearLabelsButton:hover:not(:disabled){background:#c0392b;}
 
-    .prop-group{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+    .prop-group{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .prop-row{display:flex;align-items:center;gap:8px;min-width:360px;}
+    .prop-row input[type="checkbox"]{transform:scale(1.05);}
     .button-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:flex-end;}
     .small-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
 
-    main{flex:1;padding:20px;overflow:auto;display:flex;flex-direction:column;gap:14px;position:relative;}
-
-    #status,#error{
-      text-align:center;font-size:15px;padding:10px 14px;border-radius:8px;
-    }
+    main{flex:1;padding:18px;overflow:auto;display:flex;flex-direction:column;gap:14px;position:relative;}
+    #status,#error{text-align:center;font-size:15px;padding:10px 14px;border-radius:8px;}
     #status{background:rgba(40,167,69,.1);color:var(--success);border:1px solid rgba(40,167,69,.2);}
     #error{background:rgba(220,53,69,.08);color:var(--danger);border:1px solid rgba(220,53,69,.15);display:none;}
 
-    .panel{
-      background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);
-      padding:16px 16px;
-    }
+    .panel{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:16px 16px;}
     .panel h3{margin:0 0 10px 0;font-size:16px;color:var(--dark);}
     .hint{font-size:12px;color:var(--gray);margin-top:6px;}
     .footer-credit{text-align:center;font-size:14px;color:#888;margin-top:8px;font-style:italic;}
@@ -63,23 +60,14 @@
     .clickable{cursor:pointer;}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
 
-    /* Overlay labels (fallback) */
-    #overlayLayer{
-      position:absolute; inset:0;
-      pointer-events:none;
-      z-index:5;
-    }
+    /* Overlay labels fallback */
+    #overlayLayer{position:absolute; inset:0; pointer-events:none; z-index:5;}
     .ol-label{
-      position:absolute;
-      transform:translate(-50%,-100%);
-      background:rgba(0,0,0,.72);
-      color:#fff;
-      border-radius:8px;
-      padding:6px 8px;
-      font-size:11px;
-      line-height:1.2;
-      white-space:pre;
-      max-width:240px;
+      position:absolute; transform:translate(-50%,-100%);
+      background:rgba(0,0,0,.72); color:#fff;
+      border-radius:8px; padding:6px 8px;
+      font-size:11px; line-height:1.2;
+      white-space:pre; max-width:240px;
       box-shadow:0 4px 10px rgba(0,0,0,.18);
     }
 
@@ -90,6 +78,7 @@
       .prop-group{justify-content:center;}
       .button-row{justify-content:center;}
       .small-row{justify-content:center;}
+      .prop-row{min-width:unset;}
     }
   </style>
 </head>
@@ -97,9 +86,12 @@
 <body>
 <header>
   <div class="title-container">
-    <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
+    <div class="logo-wrap" id="logoWrap">
+      <img id="logoImg" class="logo" alt="Norconsult logo">
+      <div id="logoFallback" class="logo-fallback" style="display:none;">Norconsult</div>
+    </div>
     <div class="title-block">
-      <h1 class="title">MultiProperty Checker</h1>
+      <h1 class="title">MultiProperty Labeler</h1>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
@@ -113,18 +105,26 @@
   </label>
 
   <div class="prop-group">
-    <label><input type="checkbox" id="cb1"> Property 1:
+    <div class="prop-row">
+      <input type="checkbox" id="cb1">
+      <label for="prop1">Property 1:</label>
       <select id="prop1" disabled><option value="">(ingen)</option></select>
-    </label>
-    <label><input type="checkbox" id="cb2"> Property 2:
+    </div>
+    <div class="prop-row">
+      <input type="checkbox" id="cb2">
+      <label for="prop2">Property 2:</label>
       <select id="prop2" disabled><option value="">(ingen)</option></select>
-    </label>
-    <label><input type="checkbox" id="cb3"> Property 3:
+    </div>
+    <div class="prop-row">
+      <input type="checkbox" id="cb3">
+      <label for="prop3">Property 3:</label>
       <select id="prop3" disabled><option value="">(ingen)</option></select>
-    </label>
-    <label><input type="checkbox" id="cb4"> Property 4:
+    </div>
+    <div class="prop-row">
+      <input type="checkbox" id="cb4">
+      <label for="prop4">Property 4:</label>
       <select id="prop4" disabled><option value="">(ingen)</option></select>
-    </label>
+    </div>
   </div>
 
   <div class="button-row">
@@ -151,12 +151,10 @@
         <input type="radio" name="scope" id="scopeAll">
         Bruk alle objekter (begrens)
       </label>
-
       <label title="Sikkerhetslimit hvis du velger alle objekter">
         Maks:
         <input id="maxObjects" type="number" value="200" min="1" max="5000" style="width:100px;">
       </label>
-
       <label style="gap:6px;" title="Viser 'Navn: Verdi' i stedet for bare verdier">
         <input type="checkbox" id="showPropNames" checked>
         Vis property-navn
@@ -165,7 +163,8 @@
 
     <div class="hint">
       Tips: Velg objekter i modellen først og trykk <b>Vis påskrift</b>.
-      Klikk i tabellen under for å zoome til et objekt.
+      Hvis du ikke ser tekst i 3D: sjekk at <b>Markups/Annotations</b> er slått på i visningen.
+      <br>Filtrerer bort: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
     </div>
   </div>
 
@@ -186,19 +185,52 @@
         <tbody></tbody>
       </table>
     </div>
-    <div class="hint">NB: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY filtreres bort.</div>
+    <div class="hint">Klikk på en rad for å zoome til objektet.</div>
   </div>
 
   <div class="footer-credit">
-    MultiProperty Checker – Påskrift i 3D basert på valgt Pset + egenskaper (opptil 4 linjer).<br>
-    (Feature-detection: bruker TC markups hvis støttet, ellers overlay-fallback.)
+    MultiProperty Labeler – Påskrift i 3D basert på valgt Pset + opptil 4 properties (linjevis).
   </div>
 </main>
 
 <script>
+  // ----------------------------
+  // LOGO: prøv flere URL-er
+  // Bytt gjerne ut med din GitHub Pages URL om du vil:
+  // ex: "https://<bruker>.github.io/<repo>/norconsult-logo-black.png"
+  // ----------------------------
+  const LOGO_URLS = [
+    "norconsult-logo-black.png",
+    "./norconsult-logo-black.png"
+  ];
+
+  const logoImg = document.getElementById("logoImg");
+  const logoFallback = document.getElementById("logoFallback");
+  let logoTryIndex = 0;
+
+  function tryLoadLogo(){
+    if (logoTryIndex >= LOGO_URLS.length){
+      logoImg.style.display = "none";
+      logoFallback.style.display = "block";
+      // status-settes senere når API er koblet
+      return;
+    }
+    const url = LOGO_URLS[logoTryIndex++];
+    logoImg.onload = () => {
+      logoImg.style.display = "block";
+      logoFallback.style.display = "none";
+    };
+    logoImg.onerror = () => tryLoadLogo();
+    logoImg.src = url;
+  }
+  tryLoadLogo();
+
+  // ----------------------------
+  // App state
+  // ----------------------------
   let API = null;
   let availableProps = {};
-  let currentRunObjects = [];  // {modelId, runtimeId, ifcGlobalId, name, labelText, worldCenter?}
+  let currentRunObjects = [];
   let overlayTimer = null;
 
   const els = {
@@ -231,11 +263,10 @@
     });
   }
 
-  // ============================
-  // Filter bort root/container IFC-entiteter
-  // ============================
+  // ----------------------------
+  // IFC root/container filter
+  // ----------------------------
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
-
   function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
   function looksLikeIfcEntityName(v){
     const s = normStr(v).toUpperCase();
@@ -299,9 +330,10 @@
     for (const it of IGNORE_TYPES) if (containsIfcTypeAnywhere(obj,it)) return true;
     return false;
   }
-  // ============================
 
-  // IFC GlobalId (IFC GUID) via convertToObjectIds
+  // ----------------------------
+  // IFC GlobalId from runtimeId
+  // ----------------------------
   const ifcIdCache = new Map();
   async function getIfcGlobalIdCached(modelId, runtimeId){
     const key = `${modelId}:${runtimeId}`;
@@ -319,10 +351,12 @@
     const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
     try { await API.viewer.setSelection(selector, "set"); }
     catch { try { await API.viewer.setSelection(selector, "replace"); } catch {} }
-    try { await API.viewer.setCamera(selector, { animationTime: 650 }); }
-    catch {}
+    try { await API.viewer.setCamera(selector, { animationTime: 650 }); } catch {}
   }
 
+  // ----------------------------
+  // UI: populate property dropdowns
+  // ----------------------------
   function resetPropertySelectors(){
     propSelectIds.forEach(id => {
       const s = document.getElementById(id);
@@ -349,14 +383,328 @@
     });
   }
 
-  async function connect(){
+  function getSelectedProps(){
+    const props = [];
+    for (let i=1;i<=4;i++){
+      const cb = document.getElementById(`cb${i}`);
+      const sel = document.getElementById(`prop${i}`);
+      if (cb.checked && sel && sel.value) props.push(sel.value);
+    }
+    return props;
+  }
+
+  // ----------------------------
+  // Overlay label fallback
+  // ----------------------------
+  const markupIds = [];
+  const overlayNodes = new Map(); // key -> div
+  const worldCenters = new Map(); // key -> {x,y,z}
+
+  function clearOverlayDom(){
+    overlayNodes.forEach(n => n.remove());
+    overlayNodes.clear();
+    worldCenters.clear();
+  }
+
+  async function tryClearMarkups(){
+    try{ if (API.viewer.clearMarkups) await API.viewer.clearMarkups(); }catch{}
     try{
-      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
-      els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente Property Sets.";
-      els.scanButton.disabled = false;
+      if (API.viewer.removeMarkup){
+        while (markupIds.length){
+          const id = markupIds.pop();
+          try { await API.viewer.removeMarkup(id); } catch {}
+        }
+      } else {
+        markupIds.length = 0;
+      }
+    }catch{}
+  }
+
+  function startOverlayLoop(){
+    stopOverlayLoop();
+    overlayTimer = setInterval(() => { updateOverlayPositions().catch(()=>{}); }, 200);
+  }
+  function stopOverlayLoop(){
+    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
+  }
+
+  async function updateOverlayPositions(){
+    if (!API || !overlayNodes.size) return;
+
+    const projector =
+      API.viewer.worldToScreen ||
+      API.viewer.projectToScreen ||
+      API.viewer.convertWorldToScreen ||
+      null;
+
+    if (!projector) return;
+
+    for (const [key, node] of overlayNodes.entries()){
+      const c = worldCenters.get(key);
+      if (!c) continue;
+      let pt = null;
+      try{ pt = await projector.call(API.viewer, c); }catch{ pt=null; }
+      if (!pt) continue;
+
+      const x = Array.isArray(pt) ? pt[0] : pt.x;
+      const y = Array.isArray(pt) ? pt[1] : pt.y;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+    }
+  }
+
+  async function ensureWorldCenters(modelObjectIds){
+    if (!API.viewer.getObjectBoundingBoxes) return;
+    for (const mo of modelObjectIds){
+      const modelId = mo.modelId;
+      const ids = mo.objectRuntimeIds || [];
+      if (!ids.length) continue;
+
+      try{
+        const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
+        if (Array.isArray(bbs)){
+          for (let i=0;i<ids.length;i++){
+            const bb = bbs[i];
+            if (!bb || !bb.min || !bb.max) continue;
+            worldCenters.set(`${modelId}:${ids[i]}`, {
+              x:(bb.min.x+bb.max.x)/2,
+              y:(bb.min.y+bb.max.y)/2,
+              z:(bb.min.z+bb.max.z)/2
+            });
+          }
+        } else if (bbs && typeof bbs === "object"){
+          for (const rid of ids){
+            const bb = bbs[rid] || bbs[String(rid)];
+            if (!bb || !bb.min || !bb.max) continue;
+            worldCenters.set(`${modelId}:${rid}`, {
+              x:(bb.min.x+bb.max.x)/2,
+              y:(bb.min.y+bb.max.y)/2,
+              z:(bb.min.z+bb.max.z)/2
+            });
+          }
+        }
+      }catch{}
+    }
+  }
+
+  async function tryAdd3DMarkupLabel(modelId, runtimeId, labelText){
+    const center = worldCenters.get(`${modelId}:${runtimeId}`) || null;
+
+    try{
+      if (API.viewer.addTextMarkup && center){
+        const id = await API.viewer.addTextMarkup({
+          modelId,
+          objectRuntimeId: Number(runtimeId),
+          text: labelText,
+          position: center
+        });
+        if (id) markupIds.push(id);
+        return true;
+      }
+    }catch{}
+
+    try{
+      if (API.viewer.addMarkup && center){
+        const id = await API.viewer.addMarkup({
+          type:"text",
+          modelId,
+          objectRuntimeId:Number(runtimeId),
+          text:labelText,
+          position:center
+        });
+        if (id) markupIds.push(id);
+        return true;
+      }
+    }catch{}
+
+    return false;
+  }
+
+  function addOverlayLabel(modelId, runtimeId, labelText){
+    const key = `${modelId}:${runtimeId}`;
+    const node = document.createElement("div");
+    node.className = "ol-label";
+    node.textContent = labelText;
+    els.overlayLayer.appendChild(node);
+    overlayNodes.set(key, node);
+  }
+
+  // ----------------------------
+  // Data helpers
+  // ----------------------------
+  function getPropValueFromObjProps(obj, psetName, propName){
+    for (const ps of (obj.properties || [])){
+      if (ps.name !== psetName) continue;
+      for (const p of (ps.properties || [])){
+        if (p.name === propName) return p.value;
+      }
+    }
+    return undefined;
+  }
+
+  function buildLabelText(propNames, values, showNames){
+    const lines = [];
+    for (let i=0;i<propNames.length;i++){
+      const pn = propNames[i];
+      const v = values[i];
+      const vStr = (v===null||v===undefined||String(v).trim()==="") ? "" : String(v);
+      lines.push(showNames ? `${pn}: ${vStr}` : vStr);
+    }
+    return lines.join("\n").trim();
+  }
+
+  function renderTable(rows){
+    els.resultTbody.innerHTML = "";
+    rows.forEach((r, idx) => {
+      const tr = document.createElement("tr");
+      tr.classList.add("clickable");
+      tr.addEventListener("click", async () => zoomToObject(r.modelId, r.runtimeId));
+
+      const cols = [
+        idx+1,
+        r.modelId,
+        r.runtimeId,
+        r.ifcGlobalId || "",
+        r.name || "",
+        r.labelText || ""
+      ];
+
+      cols.forEach((c, i) => {
+        const td = document.createElement("td");
+        if (i === 3) td.classList.add("mono");
+        td.textContent = c;
+        tr.appendChild(td);
+      });
+
+      els.resultTbody.appendChild(tr);
+    });
+  }
+
+  // ----------------------------
+  // Scope helper
+  // ----------------------------
+  async function getScopeRuntimeIds(modelId, allRuntimeIds){
+    // selected
+    if (els.scopeSelected && els.scopeSelected.checked){
+      try{
+        const sel = await API.viewer.getSelection();
+        const list = (sel && sel.modelObjectIds) ? sel.modelObjectIds : [];
+        const entry = list.find(x => String(x.modelId) === String(modelId));
+        const ids = (entry && entry.objectRuntimeIds) ? entry.objectRuntimeIds : [];
+        return ids.map(Number).filter(n=>Number.isFinite(n));
+      }catch{
+        return [];
+      }
+    }
+
+    // all (limited)
+    const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
+    return allRuntimeIds.slice(0, max).map(Number).filter(n=>Number.isFinite(n));
+  }
+
+  // ----------------------------
+  // Main actions
+  // ----------------------------
+  async function clearAllLabels(){
+    setBusy(true);
+    showError("");
+    try{
+      await tryClearMarkups();
+      clearOverlayDom();
+      stopOverlayLoop();
+      els.status.textContent = "🧹 Påskrift fjernet.";
+      els.clearLabelsButton.disabled = true;
     }catch(e){
-      showError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
-      els.status.textContent = "❌ Feil ved tilkobling.";
+      showError("Klarte ikke å fjerne påskrift: " + (e && e.message ? e.message : e));
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  async function applyLabels(){
+    if (!API){ showError("API ikke klar."); return; }
+    showError("");
+
+    const pset = els.psetSelect.value;
+    if (!pset){ showError("Velg et Property Set først."); return; }
+
+    const selectedProps = getSelectedProps();
+    if (!selectedProps.length){ showError("Huk av minst én property (opptil 4)."); return; }
+
+    await clearAllLabels();
+
+    els.status.textContent = "🏷️ Leser egenskaper og lager påskrift…";
+    setBusy(true);
+
+    try{
+      const models = await API.viewer.getObjects();
+      if (!models || !models.length){
+        els.status.textContent = "ℹ️ Fant ingen objekter.";
+        return;
+      }
+
+      const rows = [];
+      const showNames = !!els.showPropNames.checked;
+
+      for (const m of models){
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
+
+        const allRuntimeIds = objs.map(o => o.id);
+        const scopeIds = await getScopeRuntimeIds(modelId, allRuntimeIds);
+        if (!scopeIds.length) continue;
+
+        const objProps = await API.viewer.getObjectProperties(modelId, scopeIds);
+
+        await ensureWorldCenters([{ modelId, objectRuntimeIds: scopeIds }]);
+
+        for (const obj of (objProps || [])){
+          if (isIgnoredIfcEntity(obj)) continue;
+
+          const runtimeId = obj.id;
+          const values = selectedProps.map(pn => getPropValueFromObjProps(obj, pset, pn));
+          const labelText = buildLabelText(selectedProps, values, showNames);
+          if (!labelText) continue;
+
+          const ifcGlobalId = await getIfcGlobalIdCached(modelId, runtimeId);
+
+          rows.push({
+            modelId,
+            runtimeId,
+            ifcGlobalId,
+            name: obj.name || obj.objectName || "",
+            labelText
+          });
+
+          const okMarkup = await tryAdd3DMarkupLabel(modelId, runtimeId, labelText);
+          if (!okMarkup) addOverlayLabel(modelId, runtimeId, labelText);
+        }
+      }
+
+      currentRunObjects = rows;
+      renderTable(rows);
+
+      if (overlayNodes.size){
+        startOverlayLoop();
+        await updateOverlayPositions();
+      }
+
+      if (!rows.length){
+        els.status.textContent = "ℹ️ Ingen påskrifter ble laget (sjekk scope/valg og property-verdier).";
+        els.clearLabelsButton.disabled = true;
+      } else {
+        let msg = `✅ Ferdig: Laget ${rows.length} påskrift(er).`;
+        if (!logoImg || logoImg.style.display === "none") msg += " (Logo kunne ikke lastes – sjekk filplassering/URL.)";
+        els.status.textContent = msg;
+        els.clearLabelsButton.disabled = false;
+      }
+    }catch(e){
+      showError("Feil ved påskrift: " + (e && e.message ? e.message : e));
+      els.status.textContent = "❌ Klarte ikke å lage påskrift.";
+    }finally{
+      setBusy(false);
     }
   }
 
@@ -389,8 +737,7 @@
         if (!runtimeIds.length) continue;
 
         const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
-
-        for (const obj of objProps || []){
+        for (const obj of (objProps || [])){
           if (isIgnoredIfcEntity(obj)) continue;
 
           for (const pset of (obj.properties || [])){
@@ -411,14 +758,15 @@
       }
 
       psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
-        const opt=document.createElement("option");
-        opt.value=n; opt.textContent=n;
+        const opt = document.createElement("option");
+        opt.value = n;
+        opt.textContent = n;
         els.psetSelect.appendChild(opt);
       });
 
       els.psetSelect.disabled = false;
       els.applyLabelsButton.disabled = false;
-      els.status.textContent = "✅ Ferdig skannet – velg Pset og opptil 4 properties. Trykk «Vis påskrift».";
+      els.status.textContent = "✅ Ferdig skannet – velg Pset og huk av opptil 4 properties.";
     }catch(e){
       showError("Feil under skanning: " + (e && e.message ? e.message : e));
       els.status.textContent = "❌ Klarte ikke å skanne.";
@@ -427,374 +775,25 @@
     }
   }
 
-  function getSelectedProps(){
-    const props = [];
-    for (let i=1;i<=4;i++){
-      const cb = document.getElementById(`cb${i}`);
-      const sel = document.getElementById(`prop${i}`);
-      if (cb.checked && sel && sel.value) props.push(sel.value);
-    }
-    return props;
-  }
-
-  // Hent runtime IDs for scope (selected/all)
-  async function getScopeRuntimeIds(modelId, allRuntimeIds){
-    // selected
-    if (els.scopeSelected.checked){
-      try{
-        const sel = await API.viewer.getSelection();
-        const list = (sel && sel.modelObjectIds) ? sel.modelObjectIds : [];
-        const entry = list.find(x => String(x.modelId) === String(modelId));
-        const ids = (entry && entry.objectRuntimeIds) ? entry.objectRuntimeIds : [];
-        // fall back: if selection empty for this model, return []
-        return ids.map(Number).filter(n=>Number.isFinite(n));
-      }catch{
-        return [];
-      }
-    }
-
-    // all (limited)
-    const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
-    return allRuntimeIds.slice(0, max).map(Number).filter(n=>Number.isFinite(n));
-  }
-
-  function getPropValueFromObjProps(obj, psetName, propName){
-    for (const ps of (obj.properties || [])){
-      if (ps.name !== psetName) continue;
-      for (const p of (ps.properties || [])){
-        if (p.name === propName) return p.value;
-      }
-    }
-    return undefined;
-  }
-
-  function buildLabelText(propNames, values, showNames){
-    const lines = [];
-    for (let i=0;i<propNames.length;i++){
-      const pn = propNames[i];
-      const v = values[i];
-      const vStr = (v===null||v===undefined||String(v).trim()==="") ? "" : String(v);
-      if (showNames) lines.push(`${pn}: ${vStr}`);
-      else lines.push(vStr);
-    }
-    // remove completely empty lines? keep blanks to preserve "under hverandre"
-    return lines.join("\n").trim();
-  }
-
-  // --- Markup / Overlay handling ---
-  const markupIds = [];          // if API supports markups
-  const overlayNodes = new Map();// key => DOM node
-  const worldCenters = new Map();// key => {x,y,z}
-
-  function clearOverlayDom(){
-    overlayNodes.forEach(n => n.remove());
-    overlayNodes.clear();
-    worldCenters.clear();
-  }
-
-  async function tryClearMarkups(){
-    // Try a few known patterns, but don't fail hard
+  async function connect(){
     try{
-      if (API.viewer.clearMarkups) await API.viewer.clearMarkups();
-    }catch{}
-    try{
-      if (API.viewer.removeMarkup){
-        while (markupIds.length){
-          const id = markupIds.pop();
-          try { await API.viewer.removeMarkup(id); } catch {}
+      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
+      els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente Property Sets.";
+      els.scanButton.disabled = false;
+
+      // varsle logo-problem tidlig
+      setTimeout(() => {
+        if (logoImg.style.display === "none") {
+          els.status.textContent += " ⚠️ Logo ikke lastet – sjekk at 'norconsult-logo-black.png' ligger i samme mappe som HTML (eller bruk full URL).";
         }
-      } else {
-        markupIds.length = 0;
-      }
-    }catch{}
-  }
-
-  async function clearAllLabels(){
-    setBusy(true);
-    showError("");
-    try{
-      await tryClearMarkups();
-      clearOverlayDom();
-      stopOverlayLoop();
-      els.status.textContent = "🧹 Påskrift fjernet.";
-      els.clearLabelsButton.disabled = true;
+      }, 500);
     }catch(e){
-      showError("Klarte ikke å fjerne påskrift: " + (e && e.message ? e.message : e));
-    }finally{
-      setBusy(false);
+      showError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
+      els.status.textContent = "❌ Feil ved tilkobling.";
     }
   }
 
-  function startOverlayLoop(){
-    stopOverlayLoop();
-    // update positions periodically (cheap)
-    overlayTimer = setInterval(() => {
-      updateOverlayPositions().catch(()=>{});
-    }, 200);
-  }
-  function stopOverlayLoop(){
-    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
-  }
-
-  async function updateOverlayPositions(){
-    if (!API) return;
-    if (!overlayNodes.size) return;
-
-    // we need world->screen projection
-    // Some TC versions provide viewer.worldToScreen or viewer.projectToScreen.
-    // We'll feature-detect a few names.
-    const projector =
-      API.viewer.worldToScreen ||
-      API.viewer.projectToScreen ||
-      API.viewer.convertWorldToScreen ||
-      null;
-
-    if (!projector) return;
-
-    for (const [key, node] of overlayNodes.entries()){
-      const c = worldCenters.get(key);
-      if (!c) continue;
-      let pt = null;
-      try{
-        pt = await projector.call(API.viewer, c); // expect {x,y} or [x,y]
-      }catch{
-        pt = null;
-      }
-      if (!pt) continue;
-
-      const x = Array.isArray(pt) ? pt[0] : pt.x;
-      const y = Array.isArray(pt) ? pt[1] : pt.y;
-
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      node.style.left = `${x}px`;
-      node.style.top = `${y}px`;
-    }
-  }
-
-  async function ensureWorldCenters(modelObjectIds){
-    // Prefer API.viewer.getObjectBoundingBoxes if available
-    if (API.viewer.getObjectBoundingBoxes){
-      for (const mo of modelObjectIds){
-        const modelId = mo.modelId;
-        const ids = mo.objectRuntimeIds || [];
-        if (!ids.length) continue;
-
-        try{
-          const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
-          // Expect mapping runtimeId -> {min:{x,y,z}, max:{x,y,z}} or array aligned
-          if (Array.isArray(bbs)){
-            for (let i=0;i<ids.length;i++){
-              const bb = bbs[i];
-              if (!bb || !bb.min || !bb.max) continue;
-              const c = {
-                x: (bb.min.x + bb.max.x)/2,
-                y: (bb.min.y + bb.max.y)/2,
-                z: (bb.min.z + bb.max.z)/2
-              };
-              worldCenters.set(`${modelId}:${ids[i]}`, c);
-            }
-          } else if (typeof bbs === "object" && bbs !== null){
-            for (const rid of ids){
-              const bb = bbs[rid] || bbs[String(rid)];
-              if (!bb || !bb.min || !bb.max) continue;
-              const c = {
-                x: (bb.min.x + bb.max.x)/2,
-                y: (bb.min.y + bb.max.y)/2,
-                z: (bb.min.z + bb.max.z)/2
-              };
-              worldCenters.set(`${modelId}:${rid}`, c);
-            }
-          }
-        }catch{
-          // ignore
-        }
-      }
-    }
-
-    // If still missing centers, leave them empty (overlay will not appear for those)
-  }
-
-  async function tryAdd3DMarkupLabel(modelId, runtimeId, labelText){
-    // Feature detect a few potential APIs (varies by version)
-    // Return true if succeeded
-    const center = worldCenters.get(`${modelId}:${runtimeId}`) || null;
-
-    // Possible APIs:
-    // - viewer.addMarkup({ ... })
-    // - viewer.addTextMarkup({ ... })
-    // We try common shapes, but keep it safe.
-    try{
-      if (API.viewer.addTextMarkup && center){
-        const id = await API.viewer.addTextMarkup({
-          modelId,
-          objectRuntimeId: Number(runtimeId),
-          text: labelText,
-          position: center
-        });
-        if (id) markupIds.push(id);
-        return true;
-      }
-    }catch{}
-
-    try{
-      if (API.viewer.addMarkup && center){
-        const id = await API.viewer.addMarkup({
-          type: "text",
-          modelId,
-          objectRuntimeId: Number(runtimeId),
-          text: labelText,
-          position: center
-        });
-        if (id) markupIds.push(id);
-        return true;
-      }
-    }catch{}
-
-    return false;
-  }
-
-  function addOverlayLabel(modelId, runtimeId, labelText){
-    const key = `${modelId}:${runtimeId}`;
-    // Need center and projector support; we still create node now
-    const node = document.createElement("div");
-    node.className = "ol-label";
-    node.textContent = labelText;
-    els.overlayLayer.appendChild(node);
-    overlayNodes.set(key, node);
-  }
-
-  function renderTable(rows){
-    els.resultTbody.innerHTML = "";
-    rows.forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      tr.classList.add("clickable");
-      tr.addEventListener("click", async () => {
-        await zoomToObject(r.modelId, r.runtimeId);
-      });
-
-      const cols = [
-        idx+1,
-        r.modelId,
-        r.runtimeId,
-        r.ifcGlobalId || "",
-        r.name || "",
-        r.labelText || ""
-      ];
-
-      cols.forEach((c, i) => {
-        const td = document.createElement("td");
-        if (i === 3) td.classList.add("mono");
-        td.textContent = c;
-        tr.appendChild(td);
-      });
-
-      els.resultTbody.appendChild(tr);
-    });
-  }
-
-  async function applyLabels(){
-    if (!API){ showError("API ikke klar."); return; }
-    showError("");
-
-    const pset = els.psetSelect.value;
-    if (!pset){ showError("Velg et Property Set først."); return; }
-
-    const selectedProps = getSelectedProps();
-    if (!selectedProps.length){ showError("Huk av minst én property."); return; }
-
-    // Clear existing first
-    await clearAllLabels();
-
-    els.status.textContent = "🏷️ Leser egenskaper og lager påskrift…";
-    setBusy(true);
-
-    try{
-      const models = await API.viewer.getObjects();
-      if (!models || !models.length){
-        els.status.textContent = "ℹ️ Fant ingen objekter.";
-        return;
-      }
-
-      const rows = [];
-      const showNames = !!els.showPropNames.checked;
-
-      // Build per-model list
-      for (const m of models){
-        const modelId = m.modelId || m.modelid || m["model Id"];
-        const objs = m.objects || [];
-        if (!modelId || !objs.length) continue;
-
-        const allRuntimeIds = objs.map(o => o.id);
-        const scopeIds = await getScopeRuntimeIds(modelId, allRuntimeIds);
-
-        // If scope=selected and empty for this model, skip
-        if (els.scopeSelected.checked && (!scopeIds || !scopeIds.length)) continue;
-        if (!scopeIds.length) continue;
-
-        // Load properties for scope IDs
-        const objProps = await API.viewer.getObjectProperties(modelId, scopeIds);
-
-        // Prepare centers (for markups/overlay)
-        await ensureWorldCenters([{ modelId, objectRuntimeIds: scopeIds }]);
-
-        for (const obj of (objProps || [])){
-          if (isIgnoredIfcEntity(obj)) continue;
-
-          const runtimeId = obj.id;
-          const values = selectedProps.map(pn => getPropValueFromObjProps(obj, pset, pn));
-          const labelText = buildLabelText(selectedProps, values, showNames);
-
-          // If absolutely empty label, skip
-          if (!labelText || labelText.trim()==="") continue;
-
-          const ifcGlobalId = await getIfcGlobalIdCached(modelId, runtimeId);
-
-          const row = {
-            modelId,
-            runtimeId,
-            ifcGlobalId,
-            name: obj.name || obj.objectName || "",
-            labelText
-          };
-          rows.push(row);
-
-          // Try 3D markup first; if not possible, overlay
-          const okMarkup = await tryAdd3DMarkupLabel(modelId, runtimeId, labelText);
-          if (!okMarkup){
-            addOverlayLabel(modelId, runtimeId, labelText);
-          }
-        }
-      }
-
-      currentRunObjects = rows;
-      renderTable(rows);
-
-      // Start overlay update loop if we used overlays
-      if (overlayNodes.size){
-        startOverlayLoop();
-        // Do an immediate update
-        await updateOverlayPositions();
-      }
-
-      if (!rows.length){
-        els.status.textContent = "ℹ️ Ingen labels ble laget. (Sjekk scope/valg og property-verdier.)";
-        els.clearLabelsButton.disabled = true;
-      } else {
-        els.status.textContent =
-          `✅ Laget påskrift for ${rows.length} objekt(er). ` +
-          (markupIds.length ? `3D-markups: ${markupIds.length}. ` : "") +
-          (overlayNodes.size ? `Overlay-labels: ${overlayNodes.size}.` : "");
-        els.clearLabelsButton.disabled = false;
-      }
-    }catch(e){
-      showError("Feil ved påskrift: " + (e && e.message ? e.message : e));
-      els.status.textContent = "❌ Klarte ikke å lage påskrift.";
-    }finally{
-      setBusy(false);
-    }
-  }
-
-  // UI hooks
+  // Hook checkboxes: hvis du unchecker -> nullstill dropdown
   cbIds.forEach((cbId, index) => {
     const cb = document.getElementById(cbId);
     const sel = document.getElementById(propSelectIds[index]);
