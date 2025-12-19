@@ -4,764 +4,682 @@
   <meta charset="UTF-8" />
   <title>MultiProperty Labeler</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
   <style>
     :root{
-      --primary:#0069d9; --success:#28a745; --danger:#e74c3c; --warning:#ffc107;
-      --light:#f8f9fa; --dark:#343a40; --gray:#6c757d; --border:#dee2e6;
+      --primary:#0069d9; --success:#28a745; --danger:#e74c3c; --gray:#6c757d; --border:#e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    body{margin:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#e4edf5 100%);color:#333;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
-    header{background:rgba(255,255,255,.95);backdrop-filter:blur(10px);padding:18px 24px;border-bottom:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.08);display:flex;flex-wrap:wrap;align-items:center;gap:18px;position:relative;z-index:10;}
-    .title-container{display:flex;align-items:center;gap:12px;flex:1;min-width:320px;}
-    .logo-wrap{display:flex;align-items:center;justify-content:center;width:160px;height:160px;background:#fff;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.1);border:1px solid #eee;overflow:hidden;}
-    .logo{width:144px;height:144px;object-fit:contain;}
-    .logo-fallback{font-size:14px;color:#111;font-weight:700;text-align:center;padding:10px;}
-    .title-block{display:flex;flex-direction:column;}
-    .title{font-size:22px;font-weight:700;color:var(--primary);margin:0;}
-    .org{font-size:15px;font-weight:600;color:var(--dark);margin-top:-4px;}
-    .dev{font-size:12px;color:var(--gray);margin-top:-2px;font-style:italic;}
-    .subtitle{font-size:14px;color:var(--gray);font-style:italic;margin-left:auto;white-space:nowrap;}
+    body{
+      margin:0; background:#f5f5f7; color:#111827; min-height:100vh; display:flex; flex-direction:column;
+    }
+    header{
+      display:flex; align-items:center; gap:14px;
+      padding:12px 14px; background:#fff; border-bottom:1px solid var(--border);
+    }
+    .logoBox{
+      width:90px; height:90px; border-radius:10px; background:#fff; border:1px solid #eee;
+      display:flex; align-items:center; justify-content:center; overflow:hidden;
+      box-shadow:0 1px 3px rgba(15,23,42,.08);
+      flex:0 0 auto;
+    }
+    .logoBox img{ width:84px; height:84px; object-fit:contain; display:block; }
+    .titleBlock{display:flex; flex-direction:column; gap:2px;}
+    .title{font-weight:800; font-size:18px; color:var(--primary); line-height:1.1;}
+    .org{font-weight:700; font-size:13px; opacity:.9;}
+    .dev{font-size:11px; opacity:.75; font-style:italic;}
+    .status{margin-left:auto; font-size:12px; opacity:.8; white-space:nowrap;}
 
-    label{font-weight:600;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap;}
+    main{ padding:12px; display:flex; flex-direction:column; gap:10px; }
+    .card{
+      background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(15,23,42,.06);
+      padding:12px;
+    }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    label{ font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
     select,button,input[type="number"]{
-      padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;background:#fff;
+      border:1px solid var(--border); border-radius:8px; padding:9px 10px; font-size:13px; background:#fff;
     }
-    select{min-width:180px;max-width:320px;}
-    select:focus,input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,105,217,.15);outline:none;}
-    button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;}
-    button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.15);}
-    button:disabled{background:var(--gray);cursor:not-allowed;transform:none;box-shadow:none;opacity:.85;}
-    button#scanButton{background:var(--success);} button#scanButton:hover:not(:disabled){background:#218838;}
-    button#applyLabelsButton{background:#00c2cb;} button#applyLabelsButton:hover:not(:disabled){background:#00a0aa;}
-    button#clearLabelsButton{background:var(--danger);} button#clearLabelsButton:hover:not(:disabled){background:#c0392b;}
-
-    .prop-group{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-    .prop-row{display:flex;align-items:center;gap:8px;min-width:360px;}
-    .prop-row input[type="checkbox"]{transform:scale(1.05);}
-    .button-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:flex-end;}
-    .small-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
-
-    main{flex:1;padding:18px;overflow:auto;display:flex;flex-direction:column;gap:14px;position:relative;}
-    #status,#error{text-align:center;font-size:15px;padding:10px 14px;border-radius:8px;}
-    #status{background:rgba(40,167,69,.1);color:var(--success);border:1px solid rgba(40,167,69,.2);}
-    #error{background:rgba(220,53,69,.08);color:var(--danger);border:1px solid rgba(220,53,69,.15);display:none;}
-
-    .panel{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:16px 16px;}
-    .panel h3{margin:0 0 10px 0;font-size:16px;color:var(--dark);}
-    .hint{font-size:12px;color:var(--gray);margin-top:6px;line-height:1.4;}
-    .footer-credit{text-align:center;font-size:14px;color:#888;margin-top:8px;font-style:italic;}
-
-    /* Overlay labels fallback */
-    #overlayLayer{position:absolute; inset:0; pointer-events:none; z-index:50;}
-    .ol-label{
-      position:absolute; transform:translate(-50%,-100%);
-      background:rgba(0,0,0,.72); color:#fff;
-      border-radius:8px; padding:6px 8px;
-      font-size:11px; line-height:1.2;
-      white-space:pre; max-width:260px;
-      box-shadow:0 4px 10px rgba(0,0,0,.18);
+    select{ min-width:220px; max-width:360px; }
+    button{
+      color:#fff; border:none; cursor:pointer; font-weight:800;
+      display:inline-flex; align-items:center; gap:8px;
+      padding:10px 12px;
     }
-
-    @media (max-width:1024px){
-      header{flex-direction:column;align-items:stretch;}
-      .title-container{justify-content:center;}
-      .subtitle{margin-left:0;text-align:center;}
-      .prop-group{justify-content:center;}
-      .button-row{justify-content:center;}
-      .small-row{justify-content:center;}
-      .prop-row{min-width:unset;}
+    button:disabled{opacity:.55; cursor:not-allowed;}
+    #scanButton{background:var(--success);}
+    #applyButton{background:#00c2cb;}
+    #clearButton{background:var(--danger);}
+    .hint{font-size:12px; opacity:.75; line-height:1.45;}
+    #error{ color:#b91c1c; font-size:12px; min-height:16px; white-space:pre-wrap; }
+    .small{font-size:12px; opacity:.8;}
+    .pill{
+      display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px;
+      background:#f3f4f6; border:1px solid #e5e7eb; font-size:12px;
+    }
+    .gridProps{
+      display:grid; grid-template-columns: 1fr; gap:8px; margin-top:8px;
+    }
+    .propLine{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .propLine input{ transform:scale(1.05); }
+    @media (min-width: 880px){
+      .gridProps{ grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 
 <body>
-<header>
-  <div class="title-container">
-    <div class="logo-wrap">
-      <img id="logoImg" class="logo" alt="Norconsult logo">
-      <div id="logoFallback" class="logo-fallback" style="display:none;">Norconsult</div>
+  <header>
+    <div class="logoBox">
+      <img id="logo" src="norconsult-logo-black.png" alt="Norconsult logo"
+           onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='800';">
     </div>
-    <div class="title-block">
-      <h1 class="title">MultiProperty Checker</h1>
+    <div class="titleBlock">
+      <div class="title">MultiProperty Checker</div>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
-  </div>
+    <div class="status" id="status">Kobler til Trimble Connect…</div>
+  </header>
 
-  <span class="subtitle">Påskrift i 3D basert på opptil 4 egenskaper</span>
+  <main>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div class="pill">🏷️ Påskrift i 3D via <b>API.markup.addTextMarkup</b> (samme metode som BIK)</div>
+        <div class="pill">⛔ Filtrerer bort: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY</div>
+      </div>
 
-  <label>
-    Property Set:
-    <select id="psetSelect" disabled><option value="">(velg…)</option></select>
-  </label>
+      <div class="row" style="margin-top:10px;">
+        <button id="scanButton" disabled>🔄 Oppdater liste</button>
 
-  <div class="prop-group">
-    <div class="prop-row">
-      <input type="checkbox" id="cb1">
-      <label for="prop1">Property 1:</label>
-      <select id="prop1" disabled><option value="">(ingen)</option></select>
+        <label>
+          Property Set:
+          <select id="psetSelect" disabled><option value="">(velg…)</option></select>
+        </label>
+      </div>
+
+      <div class="gridProps">
+        <div class="propLine">
+          <input type="checkbox" id="cb1">
+          <label for="prop1">Property 1</label>
+          <select id="prop1" disabled><option value="">(ingen)</option></select>
+        </div>
+        <div class="propLine">
+          <input type="checkbox" id="cb2">
+          <label for="prop2">Property 2</label>
+          <select id="prop2" disabled><option value="">(ingen)</option></select>
+        </div>
+        <div class="propLine">
+          <input type="checkbox" id="cb3">
+          <label for="prop3">Property 3</label>
+          <select id="prop3" disabled><option value="">(ingen)</option></select>
+        </div>
+        <div class="propLine">
+          <input type="checkbox" id="cb4">
+          <label for="prop4">Property 4</label>
+          <select id="prop4" disabled><option value="">(ingen)</option></select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <label style="gap:6px;">
+          <input type="radio" name="scope" id="scopeSelected" checked>
+          Bruk valgte objekter
+        </label>
+        <label style="gap:6px;">
+          <input type="radio" name="scope" id="scopeAll">
+          Bruk alle objekter (begrens)
+        </label>
+
+        <label title="Sikkerhetslimit hvis du velger alle objekter">
+          Maks:
+          <input id="maxObjects" type="number" value="200" min="1" max="5000" style="width:90px;">
+        </label>
+
+        <label style="gap:6px;" title="Tekst: 'Navn: Verdi' vs kun verdi">
+          <input type="checkbox" id="showPropNames" checked>
+          Vis property-navn
+        </label>
+
+        <label style="gap:6px;" title="Bruk objektets 'Objektnavn' først hvis tilgjengelig">
+          <input type="checkbox" id="includeObjectName" checked>
+          Inkluder objektnavn
+        </label>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="applyButton" disabled>🏷️ Vis påskrift</button>
+        <button id="clearButton" disabled>🧹 Fjern påskrift</button>
+        <span class="small" id="runInfo"></span>
+      </div>
+
+      <div class="hint" style="margin-top:10px;">
+        <b>Tips:</b> Slå på <b>Markups/Annotations</b> i 3D-visningen hvis du ikke ser teksten.<br>
+        <b>Hvis “Bruk valgte objekter”:</b> marker objekt først i 3D (pil/selection), så trykk “Vis påskrift”.
+      </div>
+
+      <div id="error"></div>
     </div>
-    <div class="prop-row">
-      <input type="checkbox" id="cb2">
-      <label for="prop2">Property 2:</label>
-      <select id="prop2" disabled><option value="">(ingen)</option></select>
-    </div>
-    <div class="prop-row">
-      <input type="checkbox" id="cb3">
-      <label for="prop3">Property 3:</label>
-      <select id="prop3" disabled><option value="">(ingen)</option></select>
-    </div>
-    <div class="prop-row">
-      <input type="checkbox" id="cb4">
-      <label for="prop4">Property 4:</label>
-      <select id="prop4" disabled><option value="">(ingen)</option></select>
-    </div>
-  </div>
+  </main>
 
-  <div class="button-row">
-    <button id="scanButton" disabled>🔄 Oppdater liste</button>
-    <button id="applyLabelsButton" disabled>🏷️ Vis påskrift</button>
-    <button id="clearLabelsButton" disabled>🧹 Fjern påskrift</button>
-  </div>
-</header>
+  <script>
+    let API = null;
+    let availableProps = {};
+    let createdMarkupIds = []; // for removeMarkups
+    const ifcIdCache = new Map();
 
-<main>
-  <div id="overlayLayer"></div>
+    const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
-  <div id="status">Kobler til Trimble Connect…</div>
-  <div id="error"></div>
+    const els = {
+      status: document.getElementById("status"),
+      error: document.getElementById("error"),
+      runInfo: document.getElementById("runInfo"),
 
-  <div class="panel">
-    <h3>Innstillinger</h3>
-    <div class="small-row" style="margin-bottom:8px;">
-      <label style="gap:6px;">
-        <input type="radio" name="scope" id="scopeSelected" checked>
-        Bruk valgte objekter
-      </label>
-      <label style="gap:6px;">
-        <input type="radio" name="scope" id="scopeAll">
-        Bruk alle objekter (begrens)
-      </label>
-      <label title="Sikkerhetslimit hvis du velger alle objekter">
-        Maks:
-        <input id="maxObjects" type="number" value="200" min="1" max="5000" style="width:100px;">
-      </label>
-      <label style="gap:6px;" title="Viser 'Navn: Verdi' i stedet for bare verdier">
-        <input type="checkbox" id="showPropNames" checked>
-        Vis property-navn
-      </label>
-    </div>
+      scanButton: document.getElementById("scanButton"),
+      applyButton: document.getElementById("applyButton"),
+      clearButton: document.getElementById("clearButton"),
 
-    <div class="hint">
-      <b>Viktig:</b> Når du bruker <i>Bruk valgte objekter</i> må du markere ett eller flere objekt i 3D først (bruk pil/selection).<br>
-      Hvis du ikke ser tekst i 3D: slå på <b>Markups/Annotations</b> i visningen.<br>
-      <b>Filtrerer bort:</b> IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
-    </div>
-  </div>
+      psetSelect: document.getElementById("psetSelect"),
+      scopeSelected: document.getElementById("scopeSelected"),
+      scopeAll: document.getElementById("scopeAll"),
+      maxObjects: document.getElementById("maxObjects"),
+      showPropNames: document.getElementById("showPropNames"),
+      includeObjectName: document.getElementById("includeObjectName")
+    };
 
-  <div class="footer-credit">
-    MultiProperty Labeler – robust selection + markups/overlay fallback.
-  </div>
-</main>
+    const propSelectIds = ["prop1","prop2","prop3","prop4"];
+    const cbIds = ["cb1","cb2","cb3","cb4"];
 
-<script>
-  // ----------------------------
-  // Logo (robust) – prøv flere stier
-  // ----------------------------
-  const LOGO_URLS = ["norconsult-logo-black.png", "./norconsult-logo-black.png"];
-  const logoImg = document.getElementById("logoImg");
-  const logoFallback = document.getElementById("logoFallback");
-  let logoTryIndex = 0;
-
-  function tryLoadLogo(){
-    if (logoTryIndex >= LOGO_URLS.length){
-      logoImg.style.display = "none";
-      logoFallback.style.display = "block";
-      return;
+    function setStatus(msg){ els.status.textContent = msg; }
+    function setError(msg){ els.error.textContent = msg || ""; }
+    function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+    function normalizeName(name){
+      return (name || "")
+        .toString()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
     }
-    const url = LOGO_URLS[logoTryIndex++];
-    logoImg.onload = () => { logoImg.style.display = "block"; logoFallback.style.display = "none"; };
-    logoImg.onerror = () => tryLoadLogo();
-    logoImg.src = url;
-  }
-  tryLoadLogo();
 
-  // ----------------------------
-  // State / refs
-  // ----------------------------
-  let API = null;
-  let availableProps = {};
-  let overlayTimer = null;
-
-  const els = {
-    status: document.getElementById("status"),
-    error: document.getElementById("error"),
-    psetSelect: document.getElementById("psetSelect"),
-    scanButton: document.getElementById("scanButton"),
-    applyLabelsButton: document.getElementById("applyLabelsButton"),
-    clearLabelsButton: document.getElementById("clearLabelsButton"),
-    overlayLayer: document.getElementById("overlayLayer"),
-    scopeSelected: document.getElementById("scopeSelected"),
-    scopeAll: document.getElementById("scopeAll"),
-    maxObjects: document.getElementById("maxObjects"),
-    showPropNames: document.getElementById("showPropNames")
-  };
-
-  const propSelectIds = ["prop1","prop2","prop3","prop4"];
-  const cbIds = ["cb1","cb2","cb3","cb4"];
-
-  function showError(msg){
-    els.error.textContent = msg || "";
-    els.error.style.display = msg ? "block" : "none";
-  }
-  function setBusy(isBusy){
-    [els.scanButton, els.applyLabelsButton, els.clearLabelsButton].forEach(btn => {
-      if (!btn) return;
-      if (isBusy){ btn.dataset.prevDisabled = btn.disabled ? "true" : "false"; btn.disabled = true; }
-      else if (btn.dataset.prevDisabled === "false") btn.disabled = false;
-    });
-  }
-
-  // ----------------------------
-  // IFC root/container filter
-  // ----------------------------
-  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
-  function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
-  function looksLikeIfcEntityName(v){
-    const s = normStr(v).toUpperCase();
-    return s.startsWith("IFC") ? s : "";
-  }
-  function containsIfcTypeAnywhere(obj, ifcTypeUpper){
-    const target = ifcTypeUpper.toUpperCase();
-    const directCandidates = [obj.ifcType,obj.ifcEntity,obj.entityType,obj.type,obj.objectType,obj.className,obj.class];
-    for (const c of directCandidates){
-      const t = looksLikeIfcEntityName(c);
-      if (t === target) return true;
+    function looksLikeIfcEntityName(v){
+      const s = normStr(v).toUpperCase();
+      return s.startsWith("IFC") ? s : "";
     }
-    const nameCandidates = [obj.name,obj.objectName];
-    for (const c of nameCandidates){
-      const s = normStr(c).toUpperCase();
-      if (s === target || s.includes(target)) return true;
+
+    function getIfcEntityTypeFromObjectProps(obj){
+      const direct = looksLikeIfcEntityName(obj.ifcType || obj.ifcEntity || obj.entityType || obj.type || obj.objectType || obj.className || obj.class);
+      if (direct) return direct;
+
+      const wantedPropNames = new Set([
+        "IFC TYPE","IFCTYPE","IFC ENTITY","IFCENTITY","ENTITY","ENTITY TYPE","ENTITYTYPE",
+        "CLASS","CLASSNAME","OBJECTTYPE","OBJECT TYPE","COMMON TYPE","IFC CLASS","IFCCLASS"
+      ]);
+
+      const psets = (obj.properties || []);
+      const prioritized = [];
+      const others = [];
+
+      for (const ps of psets){
+        const n = normStr(ps.name || ps.set).toLowerCase();
+        if (n.includes("reference object") || n === "ifc" || n.includes("component attributes")) prioritized.push(ps);
+        else others.push(ps);
+      }
+
+      for (const ps of prioritized.concat(others)){
+        for (const p of (ps.properties || [])){
+          const pn = normStr(p.name).toUpperCase();
+          if (!wantedPropNames.has(pn)) continue;
+          const t = looksLikeIfcEntityName(p.value);
+          if (t) return t;
+        }
+      }
+      return "";
     }
-    for (const ps of (obj.properties||[])){
-      const psName = normStr(ps.name).toUpperCase();
-      if (psName === target) return true;
-      for (const p of (ps.properties||[])){
-        const pn = normStr(p.name).toUpperCase();
-        const pv = normStr(p.value).toUpperCase();
-        if (pn === target || pv === target) return true;
-        if (pn.includes(target) || pv.includes(target)) return true;
+
+    function containsIfcTypeAnywhere(obj, ifcTypeUpper){
+      const target = ifcTypeUpper.toUpperCase();
+      const directCandidates = [obj.ifcType,obj.ifcEntity,obj.entityType,obj.type,obj.objectType,obj.className,obj.class];
+      for (const c of directCandidates){
+        const t = looksLikeIfcEntityName(c);
+        if (t === target) return true;
+      }
+      const nameCandidates = [obj.name,obj.objectName];
+      for (const c of nameCandidates){
+        const s = normStr(c).toUpperCase();
+        if (s === target || s.includes(target)) return true;
+      }
+      for (const ps of (obj.properties || [])){
+        const psName = normStr(ps.name || ps.set).toUpperCase();
+        if (psName === target) return true;
+        for (const p of (ps.properties || [])){
+          const pn = normStr(p.name).toUpperCase();
+          const pv = normStr(p.value).toUpperCase();
+          if (pn === target || pv === target) return true;
+          if (pn.includes(target) || pv.includes(target)) return true;
+        }
+      }
+      return false;
+    }
+
+    function isIgnoredIfcEntity(obj){
+      const t = getIfcEntityTypeFromObjectProps(obj);
+      if (t && IGNORE_TYPES.has(t)) return true;
+      for (const it of IGNORE_TYPES){
+        if (containsIfcTypeAnywhere(obj, it)) return true;
+      }
+      return false;
+    }
+
+    // --- Selection robust (samme som tidligere, men enkel) ---
+    function extractRuntimeIdsFromSelectionEntry(entry){
+      if (!entry) return [];
+      const candidates = [
+        entry.objectRuntimeIds,
+        entry.objectIds,
+        entry.ids,
+        entry.runtimeIds
+      ];
+      for (const c of candidates){
+        if (Array.isArray(c) && c.length) return c.map(Number).filter(n=>Number.isFinite(n));
+      }
+      return [];
+    }
+
+    async function getSelectedRuntimeIdsPerModel(){
+      const map = new Map();
+      const sel = await API.viewer.getSelection();
+      const list = (sel && Array.isArray(sel.modelObjectIds)) ? sel.modelObjectIds : [];
+      for (const entry of list){
+        const modelId = entry.modelId;
+        const ids = extractRuntimeIdsFromSelectionEntry(entry);
+        if (modelId !== undefined && ids.length) map.set(String(modelId), ids);
+      }
+      return map;
+    }
+
+    // --- IFC GlobalId (IFC GUID) cache (nyttig ved debugging) ---
+    async function getIfcGlobalIdCached(modelId, runtimeId){
+      const key = `${modelId}:${runtimeId}`;
+      if (ifcIdCache.has(key)) return ifcIdCache.get(key);
+      let v = "";
+      try{
+        const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
+        v = (ids && ids[0]) ? String(ids[0]) : "";
+      }catch{}
+      ifcIdCache.set(key, v);
+      return v;
+    }
+
+    // --- Finn object name (samme robusthet som BIK, men generisk) ---
+    function findObjectName(objProps){
+      const psets = objProps.properties || [];
+      for (const pset of psets){
+        const psetNameRaw = (pset.set || pset.name || "");
+        const psetNameNorm = normalizeName(psetNameRaw);
+        const props = pset.properties || [];
+
+        for (const p of props){
+          const nameRaw = p.name || "";
+          const norm = normalizeName(nameRaw);
+
+          if (norm === "OBJEKTNAVN") return String(p.value || "");
+          if (norm.indexOf("OBJEKTNAVN") >= 0) return String(p.value || "");
+
+          if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "objektnavn"){
+            return String(p.value || "");
+          }
+        }
+      }
+      return "";
+    }
+
+    function getPropValue(objProps, psetName, propName){
+      const psets = objProps.properties || [];
+      for (const pset of psets){
+        const pn = pset.name || pset.set || "";
+        if (pn !== psetName) continue;
+        for (const p of (pset.properties || [])){
+          if (p.name === propName) return p.value;
+        }
+      }
+      return undefined;
+    }
+
+    function buildLabelText(objProps, pset, selectedProps, showNames, includeObjectName){
+      const lines = [];
+
+      if (includeObjectName){
+        const on = findObjectName(objProps);
+        if (normStr(on)) lines.push(String(on));
+      }
+
+      for (const prop of selectedProps){
+        const v = getPropValue(objProps, pset, prop);
+        const vs = normStr(v);
+        if (!vs) continue; // ikke skriv tomme linjer
+        lines.push(showNames ? `${prop}: ${vs}` : `${vs}`);
+      }
+
+      // Må ha minst én linje (objektnavn eller property)
+      return lines.length ? lines.join("\n") : "";
+    }
+
+    // ===== MARKUP METODIKK (identisk prinsipp som BIK) =====
+    async function clearAllMarkups(){
+      try{
+        if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
+        if (createdMarkupIds.length){
+          await API.markup.removeMarkups(createdMarkupIds.slice());
+          createdMarkupIds = [];
+        }
+      }catch(err){
+        console.warn("Klarte ikke å fjerne markups:", err);
       }
     }
-    return false;
-  }
-  function getIfcEntityTypeFromObjectProps(obj){
-    const direct = looksLikeIfcEntityName(obj.ifcType||obj.ifcEntity||obj.entityType||obj.type||obj.objectType||obj.className||obj.class);
-    if (direct) return direct;
 
-    const wantedPropNames = new Set([
-      "IFC TYPE","IFCTYPE","IFC ENTITY","IFCENTITY","ENTITY","ENTITY TYPE","ENTITYTYPE",
-      "CLASS","CLASSNAME","OBJECTTYPE","OBJECT TYPE","COMMON TYPE","IFC CLASS","IFCCLASS"
-    ]);
-
-    const psets = (obj.properties||[]);
-    const prioritized=[], others=[];
-    for (const ps of psets){
-      const n = normStr(ps.name).toLowerCase();
-      if (n.includes("reference object") || n==="ifc" || n.includes("component attributes")) prioritized.push(ps);
-      else others.push(ps);
-    }
-    const ordered = prioritized.concat(others);
-
-    for (const ps of ordered){
-      for (const p of (ps.properties||[])){
-        const pn = normStr(p.name).toUpperCase();
-        if (!wantedPropNames.has(pn)) continue;
-        const t = looksLikeIfcEntityName(p.value);
-        if (t) return t;
+    async function addTextMarkupForObject(modelId, runtimeId, text){
+      if (!API || !API.markup || typeof API.markup.addTextMarkup !== "function") {
+        throw new Error("MarkupAPI (API.markup.addTextMarkup) er ikke tilgjengelig i denne workspacen.");
       }
+
+      const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
+      if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) return null;
+
+      const bb = boxes[0].boundingBox;
+      const min = bb.min;
+      const max = bb.max;
+
+      // Anta Y=opp (samme som BIK-koden)
+      const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
+      const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
+      const topY_mm    = (max.y) * 1000.0;
+
+      const startPick = {
+        positionX: centerX_mm,
+        positionY: topY_mm + 200.0,    // 0.2 m over topp
+        positionZ: centerZ_mm,
+        modelId: modelId,
+        objectId: runtimeId
+      };
+
+      const endPick = {
+        positionX: centerX_mm,
+        positionY: topY_mm + 1200.0,   // 1.2 m over topp
+        positionZ: centerZ_mm,
+        modelId: modelId,
+        objectId: runtimeId
+      };
+
+      const textMarkup = {
+        start: startPick,
+        end: endPick,
+        text: text,
+        color: { r: 0, g: 0, b: 204, a: 255 } // mørk blå
+      };
+
+      const created = await API.markup.addTextMarkup([textMarkup]);
+      if (created && created.length && typeof created[0].id === "number"){
+        createdMarkupIds.push(created[0].id);
+        return created[0].id;
+      }
+      return null;
     }
-    return "";
-  }
-  function isIgnoredIfcEntity(obj){
-    const t = getIfcEntityTypeFromObjectProps(obj);
-    if (t && IGNORE_TYPES.has(t)) return true;
-    for (const it of IGNORE_TYPES) if (containsIfcTypeAnywhere(obj,it)) return true;
-    return false;
-  }
+    // =======================================================
 
-  // ----------------------------
-  // UI: property dropdowns
-  // ----------------------------
-  function resetPropertySelectors(){
-    propSelectIds.forEach(id => {
-      const s = document.getElementById(id);
-      s.innerHTML = '<option value="">(ingen)</option>';
-      s.disabled = true;
-    });
-    cbIds.forEach(id => document.getElementById(id).checked = false);
-  }
-
-  function populatePropSelects(pset){
-    resetPropertySelectors();
-    if (!pset || !availableProps[pset]) return;
-
-    const props = Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
-    propSelectIds.forEach(id => {
-      const sel = document.getElementById(id);
-      props.forEach(p => {
-        const opt = document.createElement("option");
-        opt.value = p;
-        opt.textContent = p;
-        sel.appendChild(opt);
+    function resetPropertySelectors(){
+      propSelectIds.forEach(id => {
+        const s = document.getElementById(id);
+        s.innerHTML = '<option value="">(ingen)</option>';
+        s.disabled = true;
       });
-      sel.disabled = false;
-    });
-  }
-
-  function getSelectedProps(){
-    const props = [];
-    for (let i=1;i<=4;i++){
-      const cb = document.getElementById(`cb${i}`);
-      const sel = document.getElementById(`prop${i}`);
-      if (cb.checked && sel && sel.value) props.push(sel.value);
+      cbIds.forEach(id => document.getElementById(id).checked = false);
     }
-    return props;
-  }
 
-  // ----------------------------
-  // Overlay + markups (fallback)
-  // ----------------------------
-  const markupIds = [];
-  const overlayNodes = new Map(); // key -> div
-  const worldCenters = new Map(); // key -> {x,y,z}
+    function populatePropSelects(pset){
+      resetPropertySelectors();
+      if (!pset || !availableProps[pset]) return;
 
-  function clearOverlayDom(){
-    overlayNodes.forEach(n => n.remove());
-    overlayNodes.clear();
-    worldCenters.clear();
-  }
-  function stopOverlayLoop(){
-    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
-  }
-  function startOverlayLoop(){
-    stopOverlayLoop();
-    overlayTimer = setInterval(() => { updateOverlayPositions().catch(()=>{}); }, 200);
-  }
-
-  async function updateOverlayPositions(){
-    if (!API || !overlayNodes.size) return;
-
-    const projector =
-      API.viewer.worldToScreen ||
-      API.viewer.projectToScreen ||
-      API.viewer.convertWorldToScreen ||
-      null;
-
-    if (!projector) return;
-
-    for (const [key, node] of overlayNodes.entries()){
-      const c = worldCenters.get(key);
-      if (!c) continue;
-      let pt = null;
-      try{ pt = await projector.call(API.viewer, c); }catch{ pt=null; }
-      if (!pt) continue;
-
-      const x = Array.isArray(pt) ? pt[0] : pt.x;
-      const y = Array.isArray(pt) ? pt[1] : pt.y;
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-
-      node.style.left = `${x}px`;
-      node.style.top = `${y}px`;
-    }
-  }
-
-  async function ensureWorldCenters(modelId, ids){
-    if (!API.viewer.getObjectBoundingBoxes) return;
-    try{
-      const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
-      if (Array.isArray(bbs)){
-        for (let i=0;i<ids.length;i++){
-          const bb = bbs[i];
-          if (!bb || !bb.min || !bb.max) continue;
-          worldCenters.set(`${modelId}:${ids[i]}`, {
-            x:(bb.min.x+bb.max.x)/2,
-            y:(bb.min.y+bb.max.y)/2,
-            z:(bb.min.z+bb.max.z)/2
-          });
-        }
-      } else if (bbs && typeof bbs === "object"){
-        for (const rid of ids){
-          const bb = bbs[rid] || bbs[String(rid)];
-          if (!bb || !bb.min || !bb.max) continue;
-          worldCenters.set(`${modelId}:${rid}`, {
-            x:(bb.min.x+bb.max.x)/2,
-            y:(bb.min.y+bb.max.y)/2,
-            z:(bb.min.z+bb.max.z)/2
-          });
-        }
-      }
-    }catch{}
-  }
-
-  async function tryClearMarkups(){
-    try{ if (API.viewer.clearMarkups) await API.viewer.clearMarkups(); }catch{}
-    try{
-      if (API.viewer.removeMarkup){
-        while (markupIds.length){
-          const id = markupIds.pop();
-          try { await API.viewer.removeMarkup(id); } catch {}
-        }
-      } else {
-        markupIds.length = 0;
-      }
-    }catch{}
-  }
-
-  function addOverlayLabel(modelId, runtimeId, labelText){
-    const key = `${modelId}:${runtimeId}`;
-    const node = document.createElement("div");
-    node.className = "ol-label";
-    node.textContent = labelText;
-    els.overlayLayer.appendChild(node);
-    overlayNodes.set(key, node);
-  }
-
-  async function tryAdd3DMarkupLabel(modelId, runtimeId, labelText){
-    const center = worldCenters.get(`${modelId}:${runtimeId}`) || null;
-
-    // No center => can't do markup/overlay nicely
-    if (!center) return false;
-
-    try{
-      if (API.viewer.addTextMarkup){
-        const id = await API.viewer.addTextMarkup({
-          modelId,
-          objectRuntimeId: Number(runtimeId),
-          text: labelText,
-          position: center
+      const props = Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
+      propSelectIds.forEach(id => {
+        const sel = document.getElementById(id);
+        props.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p;
+          opt.textContent = p;
+          sel.appendChild(opt);
         });
-        if (id) markupIds.push(id);
-        return true;
+        sel.disabled = false;
+      });
+    }
+
+    function getSelectedProps(){
+      const selected = [];
+      for (let i=1;i<=4;i++){
+        const cb = document.getElementById(`cb${i}`);
+        const sel = document.getElementById(`prop${i}`);
+        if (cb.checked && sel && sel.value) selected.push(sel.value);
       }
-    }catch{}
+      return selected;
+    }
 
-    try{
-      if (API.viewer.addMarkup){
-        const id = await API.viewer.addMarkup({
-          type:"text",
-          modelId,
-          objectRuntimeId:Number(runtimeId),
-          text:labelText,
-          position:center
-        });
-        if (id) markupIds.push(id);
-        return true;
+    async function scanProperties(){
+      setError("");
+      els.runInfo.textContent = "";
+      availableProps = {};
+
+      els.psetSelect.disabled = true;
+      els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
+      resetPropertySelectors();
+
+      setStatus("Skanner modell for Property Sets…");
+
+      try{
+        const models = await API.viewer.getObjects();
+        if (!models || !models.length){
+          setStatus("Fant ingen objekter i visningen.");
+          return;
+        }
+
+        for (const m of models){
+          const modelId = String(m.modelId || m.modelid || m["model Id"] || "");
+          const objs = m.objects || [];
+          if (!modelId || !objs.length) continue;
+
+          const runtimeIds = objs.map(o => o.id);
+          const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+          for (const obj of (objProps || [])){
+            if (isIgnoredIfcEntity(obj)) continue;
+
+            for (const pset of (obj.properties || [])){
+              const name = pset.name || pset.set || "";
+              if (!name) continue;
+              if (!availableProps[name]) availableProps[name] = new Set();
+              for (const p of (pset.properties || [])){
+                if (p.name) availableProps[name].add(p.name);
+              }
+            }
+          }
+        }
+
+        const psets = Object.keys(availableProps).sort((a,b)=>a.localeCompare(b,"nb"));
+        if (!psets.length){
+          setStatus("Ingen Property Sets funnet (etter filtrering).");
+          return;
+        }
+
+        for (const p of psets){
+          const opt = document.createElement("option");
+          opt.value = p;
+          opt.textContent = p;
+          els.psetSelect.appendChild(opt);
+        }
+
+        els.psetSelect.disabled = false;
+        els.applyButton.disabled = false;
+        setStatus("Ferdig. Velg Property Set og huk av opptil 4 properties.");
+      }catch(err){
+        console.error(err);
+        setError("Feil ved skanning: " + (err.message || err));
+        setStatus("Kunne ikke skanne.");
       }
-    }catch{}
-
-    return false;
-  }
-
-  // ----------------------------
-  // Read selection robustly
-  // ----------------------------
-  function extractRuntimeIdsFromSelectionEntry(entry){
-    if (!entry) return [];
-    const candidates = [
-      entry.objectRuntimeIds,
-      entry.objectIds,
-      entry.ids,
-      entry.runtimeIds
-    ];
-    for (const c of candidates){
-      if (Array.isArray(c) && c.length) return c.map(Number).filter(n=>Number.isFinite(n));
     }
-    return [];
-  }
 
-  async function getSelectedRuntimeIdsPerModel(){
-    const map = new Map(); // modelId -> ids[]
-    const sel = await API.viewer.getSelection();
-    const list = (sel && Array.isArray(sel.modelObjectIds)) ? sel.modelObjectIds : [];
-    for (const entry of list){
-      const modelId = entry.modelId;
-      const ids = extractRuntimeIdsFromSelectionEntry(entry);
-      if (modelId !== undefined && ids.length) map.set(String(modelId), ids);
-    }
-    return map;
-  }
+    async function applyLabels(){
+      setError("");
+      els.runInfo.textContent = "";
 
-  // ----------------------------
-  // Properties
-  // ----------------------------
-  function getPropValueFromObjProps(obj, psetName, propName){
-    for (const ps of (obj.properties || [])){
-      if (ps.name !== psetName) continue;
-      for (const p of (ps.properties || [])){
-        if (p.name === propName) return p.value;
+      const pset = els.psetSelect.value;
+      if (!pset){
+        setError("Velg et Property Set først.");
+        return;
       }
-    }
-    return undefined;
-  }
 
-  function buildLabelText(propNames, values, showNames){
-    const lines = [];
-    for (let i=0;i<propNames.length;i++){
-      const pn = propNames[i];
-      const v = values[i];
-      const vStr = (v===null||v===undefined) ? "" : String(v).trim();
-      lines.push(showNames ? `${pn}: ${vStr}` : vStr);
-    }
-    // Ikke trim til tom hvis alt er blankt – men hvis absolutt ingenting, returner tom
-    const joined = lines.join("\n");
-    const hasAny = joined.replace(/\s/g, "").length > 0;
-    return hasAny ? joined : "";
-  }
-
-  // ----------------------------
-  // Actions
-  // ----------------------------
-  async function clearAllLabels(){
-    setBusy(true);
-    showError("");
-    try{
-      await tryClearMarkups();
-      clearOverlayDom();
-      stopOverlayLoop();
-      els.status.textContent = "🧹 Påskrift fjernet.";
-      els.clearLabelsButton.disabled = true;
-    }catch(e){
-      showError("Klarte ikke å fjerne påskrift: " + (e && e.message ? e.message : e));
-    }finally{
-      setBusy(false);
-    }
-  }
-
-  async function applyLabels(){
-    if (!API){ showError("API ikke klar."); return; }
-    showError("");
-
-    const pset = els.psetSelect.value;
-    if (!pset){ showError("Velg et Property Set først."); return; }
-
-    const selectedProps = getSelectedProps();
-    if (!selectedProps.length){ showError("Huk av minst én property (opptil 4)."); return; }
-
-    await clearAllLabels();
-
-    els.status.textContent = "🏷️ Leser objekter og lager påskrift…";
-    setBusy(true);
-
-    try{
-      const models = await API.viewer.getObjects();
-      if (!models || !models.length){
-        els.status.textContent = "ℹ️ Fant ingen objekter.";
+      const selectedProps = getSelectedProps();
+      if (!selectedProps.length){
+        setError("Huk av minst én property (opptil 4).");
         return;
       }
 
       const showNames = !!els.showPropNames.checked;
-      let created = 0;
-      let considered = 0;
+      const includeObjectName = !!els.includeObjectName.checked;
 
-      // Selection map (for selected scope)
-      let selectedMap = null;
-      if (els.scopeSelected.checked){
-        selectedMap = await getSelectedRuntimeIdsPerModel();
-        if (!selectedMap.size){
-          showError("Ingen valgte objekter funnet. Marker ett eller flere objekt i 3D først (pil/selection), og prøv igjen.");
-          els.status.textContent = "⛔ Ingen labels ble laget (tom selection).";
+      setStatus("Fjerner gamle påskrifter…");
+      await clearAllMarkups();
+
+      setStatus("Samler objekter…");
+
+      let perModelIds = new Map();
+
+      try{
+        if (els.scopeSelected.checked){
+          perModelIds = await getSelectedRuntimeIdsPerModel();
+          if (!perModelIds.size){
+            setError("Ingen valgte objekter funnet. Marker objekt i 3D først (pil/selection), og prøv igjen.");
+            setStatus("Ingen påskrift laget.");
+            return;
+          }
+        } else {
+          // all objects (limited)
+          const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
+          const models = await API.viewer.getObjects();
+          for (const m of (models || [])){
+            const modelId = String(m.modelId || m.modelid || m["model Id"] || "");
+            const objs = m.objects || [];
+            if (!modelId || !objs.length) continue;
+            const ids = objs.map(o=>o.id).slice(0, max).map(Number).filter(n=>Number.isFinite(n));
+            if (ids.length) perModelIds.set(modelId, ids);
+          }
+        }
+
+        if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
+          setError("MarkupAPI ikke tilgjengelig i denne workspacen. (API.markup.addTextMarkup mangler)");
+          setStatus("Kan ikke lage 3D-tekst.");
           return;
         }
-      }
 
-      // Detect projector support for overlay
-      const projector =
-        API.viewer.worldToScreen ||
-        API.viewer.projectToScreen ||
-        API.viewer.convertWorldToScreen ||
-        null;
+        setStatus("Leser egenskaper og lager 3D-tekst…");
+        let created = 0;
+        let considered = 0;
 
-      for (const m of models){
-        const modelIdRaw = m.modelId || m.modelid || m["model Id"];
-        if (modelIdRaw === undefined || modelIdRaw === null) continue;
-        const modelId = String(modelIdRaw);
-
-        const objs = m.objects || [];
-        if (!objs.length) continue;
-
-        let ids = [];
-        if (els.scopeSelected.checked){
-          ids = selectedMap.get(modelId) || [];
+        for (const [modelId, ids] of perModelIds.entries()){
           if (!ids.length) continue;
+
+          const objPropsArr = await API.viewer.getObjectProperties(modelId, ids);
+
+          for (const objProps of (objPropsArr || [])){
+            if (!objProps) continue;
+            if (isIgnoredIfcEntity(objProps)) continue;
+
+            considered++;
+
+            const rid = objProps.id;
+            const text = buildLabelText(objProps, pset, selectedProps, showNames, includeObjectName);
+            if (!text) continue;
+
+            // Optional debug: ensure GUID exists (not required for markup)
+            // const ifcGuid = await getIfcGlobalIdCached(modelId, rid);
+
+            const id = await addTextMarkupForObject(modelId, rid, text);
+            if (id != null) created++;
+          }
+        }
+
+        if (!created){
+          setStatus("Ingen påskrift ble laget. Sjekk at valgt Pset/property faktisk har verdier på objektene.");
+          els.clearButton.disabled = true;
+          els.runInfo.textContent = `Vurdert: ${considered}.`;
         } else {
-          const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
-          ids = objs.map(o => o.id).slice(0, max).map(Number).filter(n=>Number.isFinite(n));
+          setStatus("Viser 3D-tekst (sjekk at markups/annotations er slått på i viewer).");
+          els.clearButton.disabled = false;
+          els.runInfo.textContent = `Laget: ${created}. Vurdert: ${considered}.`;
         }
-
-        // For positions
-        await ensureWorldCenters(modelId, ids);
-
-        // Pull properties for these ids
-        const objProps = await API.viewer.getObjectProperties(modelId, ids);
-
-        for (const obj of (objProps || [])){
-          if (isIgnoredIfcEntity(obj)) continue;
-
-          considered++;
-
-          const runtimeId = obj.id;
-          const values = selectedProps.map(pn => getPropValueFromObjProps(obj, pset, pn));
-          const labelText = buildLabelText(selectedProps, values, showNames);
-
-          // Hvis alt er tomt, hopp
-          if (!labelText) continue;
-
-          // 1) Try markup
-          const okMarkup = await tryAdd3DMarkupLabel(modelId, runtimeId, labelText);
-
-          // 2) Fallback overlay (hvis vi kan projisere)
-          if (!okMarkup){
-            addOverlayLabel(modelId, runtimeId, labelText);
-          }
-
-          created++;
-        }
+      }catch(err){
+        console.error(err);
+        setError("Feil ved opprettelse av påskrift: " + (err.message || err));
+        setStatus("Kunne ikke lage 3D-tekst.");
       }
+    }
 
-      // Overlay loop (only useful if projector exists)
-      if (overlayNodes.size && projector){
-        startOverlayLoop();
-        await updateOverlayPositions();
-      }
+    async function clearLabels(){
+      setError("");
+      setStatus("Fjerner påskrift…");
+      await clearAllMarkups();
+      els.clearButton.disabled = true;
+      els.runInfo.textContent = "";
+      setStatus("Påskrift fjernet.");
+    }
 
-      // If overlay created but projector missing => tell user why they won't see it
-      if (overlayNodes.size && !projector){
-        els.status.textContent =
-          `⚠️ Laget ${created} labels (fallback overlay), men din TC-viewer støtter ikke world→screen projeksjon i APIet, ` +
-          `så overlay kan ikke plasseres korrekt. Markups/Annotations-funksjon trengs for ekte 3D-tekst.`;
-        els.clearLabelsButton.disabled = false;
-        return;
-      }
+    function onWorkspaceEvent(event, payload){
+      // (valgfritt) – ikke nødvendig for batch labels, men nyttig for debugging
+      // console.log("Event:", event, payload);
+    }
 
-      if (!created){
-        els.status.textContent = "ℹ️ Ingen labels ble laget. (Sjekk at valgt objekt faktisk har Pset/egenskaper, eller prøv 'Bruk alle objekter'.)";
-        showError("");
-        els.clearLabelsButton.disabled = true;
+    async function connectToWorkspace(){
+      API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
+
+      console.log("Workspace API tilkoblet:", API);
+
+      if (!API.markup || typeof API.markup.addTextMarkup !== "function") {
+        setStatus("Tilkoblet (MarkupAPI ikke tilgjengelig – 3D-tekst kan ikke tegnes).");
       } else {
-        els.status.textContent = `✅ Ferdig: Laget ${created} påskrift(er) (vurdert ${considered} objekt).`;
-        els.clearLabelsButton.disabled = false;
-      }
-    }catch(e){
-      showError("Feil ved påskrift: " + (e && e.message ? e.message : e));
-      els.status.textContent = "❌ Klarte ikke å lage påskrift.";
-    }finally{
-      setBusy(false);
-    }
-  }
-
-  async function scanProperties(){
-    if (!API){ showError("API ikke klar."); return; }
-
-    showError("");
-    availableProps = {};
-    els.applyLabelsButton.disabled = true;
-    els.clearLabelsButton.disabled = true;
-    els.psetSelect.disabled = true;
-    els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
-
-    els.status.textContent = "🔍 Skanner modell for Property Sets…";
-    setBusy(true);
-
-    try{
-      const models = await API.viewer.getObjects();
-      if (!models || !models.length){
-        els.status.textContent = "ℹ️ Fant ingen objekter i visningen.";
-        return;
+        setStatus("Tilkoblet. Trykk «Oppdater liste» for å skanne Pset.");
       }
 
-      for (const m of models){
-        const modelId = m.modelId || m.modelid || m["model Id"];
-        const objs = m.objects || [];
-        if (!modelId || !objs.length) continue;
-
-        const runtimeIds = objs.map(o => o.id);
-        if (!runtimeIds.length) continue;
-
-        const objProps = await API.viewer.getObjectProperties(String(modelId), runtimeIds);
-        for (const obj of (objProps || [])){
-          if (isIgnoredIfcEntity(obj)) continue;
-
-          for (const pset of (obj.properties || [])){
-            const name = pset.name || "";
-            if (!name) continue;
-            if (!availableProps[name]) availableProps[name] = new Set();
-            for (const p of (pset.properties || [])){
-              if (p.name) availableProps[name].add(p.name);
-            }
-          }
-        }
-      }
-
-      const psetNames = Object.keys(availableProps);
-      if (!psetNames.length){
-        els.status.textContent = "ℹ️ Ingen Property Sets funnet (etter filtrering).";
-        return;
-      }
-
-      psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
-        const opt = document.createElement("option");
-        opt.value = n;
-        opt.textContent = n;
-        els.psetSelect.appendChild(opt);
-      });
-
-      els.psetSelect.disabled = false;
-      els.applyLabelsButton.disabled = false;
-      els.status.textContent = "✅ Ferdig skannet – velg Pset og huk av opptil 4 properties.";
-    }catch(e){
-      showError("Feil under skanning: " + (e && e.message ? e.message : e));
-      els.status.textContent = "❌ Klarte ikke å skanne.";
-    }finally{
-      setBusy(false);
-    }
-  }
-
-  async function connect(){
-    try{
-      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
-      els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente Property Sets.";
       els.scanButton.disabled = false;
-
-      setTimeout(() => {
-        if (logoImg.style.display === "none") {
-          els.status.textContent += " ⚠️ Logo ikke lastet – sjekk at 'norconsult-logo-black.png' ligger i samme mappe som HTML (eller bruk full URL).";
-        }
-      }, 500);
-    }catch(e){
-      showError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
-      els.status.textContent = "❌ Feil ved tilkobling.";
     }
-  }
 
-  // checkbox behavior
-  cbIds.forEach((cbId, index) => {
-    const cb = document.getElementById(cbId);
-    const sel = document.getElementById(propSelectIds[index]);
-    cb.addEventListener("change", () => { if (!sel) return; if (!cb.checked) sel.value = ""; });
-  });
+    // UI events
+    els.scanButton.onclick = scanProperties;
+    els.applyButton.onclick = applyLabels;
+    els.clearButton.onclick = clearLabels;
 
-  els.scanButton.onclick = scanProperties;
-  els.applyLabelsButton.onclick = applyLabels;
-  els.clearLabelsButton.onclick = clearAllLabels;
+    els.psetSelect.onchange = (e) => {
+      setError("");
+      populatePropSelects(e.target.value);
+    };
 
-  els.psetSelect.onchange = e => {
-    showError("");
-    populatePropSelects(e.target.value);
-  };
+    cbIds.forEach((cbId, idx) => {
+      const cb = document.getElementById(cbId);
+      const sel = document.getElementById(propSelectIds[idx]);
+      cb.addEventListener("change", () => { if (!cb.checked) sel.value = ""; });
+    });
 
-  connect();
-</script>
+    // Start
+    (async () => {
+      try{
+        await connectToWorkspace();
+      }catch(err){
+        console.error(err);
+        setError("Klarte ikke å koble til Workspace API: " + (err.message || err));
+        setStatus("Feil.");
+      }
+    })();
+  </script>
 </body>
 </html>
