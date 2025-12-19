@@ -1,424 +1,467 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>Kote Bunn Innvendig Kum (BIK)</title>
+  <title>MultiProperty Labeler</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
   <style>
-    :root {
+    :root{
+      --primary:#0069d9; --success:#28a745; --danger:#e74c3c; --gray:#6c757d; --border:#dee2e6;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-
-    body {
-      margin: 0;
-      padding: 0;
-      background: #f5f5f7;
-      color: #111827;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+    body{margin:0;background:#f5f5f7;color:#111827;min-height:100vh;display:flex;flex-direction:column;}
+    header{
+      display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border-bottom:1px solid #e5e7eb;
+      font-size:14px;font-weight:700;flex-wrap:wrap;
     }
-
-    header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 14px;
-      background: #ffffff;
-      border-bottom: 1px solid #e5e7eb;
-      font-size: 14px;
-      font-weight: 600;
+    header .status{margin-left:auto;font-weight:400;font-size:12px;opacity:.8;white-space:nowrap;}
+    main{padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06);padding:10px 12px;font-size:13px;}
+    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+    label{font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap;}
+    select,button{
+      padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:13px;
     }
-
-    header .status {
-      margin-left: auto;
-      font-weight: 400;
-      font-size: 12px;
-      opacity: 0.8;
-    }
-
-    main {
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .card {
-      background: #ffffff;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-      padding: 10px 12px;
-      font-size: 13px;
-    }
-
-    .label {
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-
-    .value {
-      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 13px;
-    }
-
-    .muted {
-      opacity: 0.75;
-    }
-
-    .small {
-      font-size: 12px;
-    }
-
-    #error {
-      color: #b91c1c;
-      font-size: 12px;
-      min-height: 16px;
-      white-space: pre-wrap;
-    }
+    select{min-width:260px;max-width:520px;background:#fff;}
+    button{border:none;cursor:pointer;font-weight:700;color:#fff;display:inline-flex;align-items:center;gap:6px;}
+    button:disabled{background:var(--gray);cursor:not-allowed;opacity:.85;}
+    #scanBtn{background:var(--success);}
+    #showBtn{background:var(--primary);}
+    #clearBtn{background:var(--danger);}
+    .muted{opacity:.75}
+    #error{color:#b91c1c;font-size:12px;min-height:16px;white-space:pre-wrap;}
+    .small{font-size:12px}
   </style>
 </head>
-<body>
-  <header>
-    Kote Bunn Innvendig Kum (BIK)
-    <span class="status" id="status">Kobler til Trimble Connect…</span>
-  </header>
 
-  <main>
-    <div class="card">
-      <div class="label">Valgt objekt</div>
-      <div id="objectInfo" class="value small muted">
-        Ingen objekt valgt. Klikk på en kum i modellen.
-      </div>
+<body>
+<header>
+  MultiProperty Labeler (påskrift i 3D)
+  <span class="status" id="status">Kobler til Trimble Connect…</span>
+</header>
+
+<main>
+  <div class="card">
+    <div class="row">
+      <button id="scanBtn" disabled>🔎 Oppdater liste</button>
+
+      <label>
+        Property Set:
+        <select id="psetSelect" disabled>
+          <option value="">(velg…)</option>
+        </select>
+      </label>
+
+      <label>
+        Property:
+        <select id="propSelect" disabled>
+          <option value="">(velg…)</option>
+        </select>
+      </label>
     </div>
 
-    <div class="card">
-      <div class="label">Kote Bunn Innvendig Kum (BIK)</div>
-      <div id="bikValue" class="value">Ikke funnet</div>
-      <div id="bikPset" class="muted small"></div>
-      <div id="bikRaw" class="muted small"></div>
+    <div class="row" style="margin-top:10px;">
+      <button id="showBtn" disabled>🏷️ Vis påskrift</button>
+      <button id="clearBtn" disabled>🧹 Fjern påskrifter</button>
+      <span class="muted small" id="info">
+        Filtrerer bort IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
+      </span>
     </div>
 
     <div id="error"></div>
-  </main>
+  </div>
 
-  <script>
-    let API = null;
+  <div class="card">
+    <div class="small muted">
+      Tips: Velg f.eks. <b>1_VA</b> → <b>Diameter Kumlokk (mm)</b> og trykk “Vis påskrift”.
+      Husk å slå på Markups/Annotations i visningen om du ikke ser tekst.
+    </div>
+  </div>
+</main>
 
-    const TARGET_PROP = "Kote Bunn Innvendig Kum (BIK)";
-    const TARGET_PROP_NORM = normalizeName(TARGET_PROP);
+<script>
+  let API = null;
 
-    let lastTextMarkupId = null;
+  // Cache og state
+  let availableProps = {};                 // { psetName: Set(props) }
+  let lastMarkupIds = [];                  // markups vi har lagt til (for rydding)
+  let lastObjectIndex = new Map();         // key: `${modelId}:${runtimeId}` -> {modelId, runtimeId}
+  const ifcIdCache = new Map();            // key: `${modelId}:${runtimeId}` -> IfcGlobalId
 
-    // ---------- helpers ----------
-    function normalizeName(name) {
-      return (name || "")
-        .toString()
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
+  // UI
+  const els = {
+    status: document.getElementById("status"),
+    error: document.getElementById("error"),
+    info: document.getElementById("info"),
+    scanBtn: document.getElementById("scanBtn"),
+    showBtn: document.getElementById("showBtn"),
+    clearBtn: document.getElementById("clearBtn"),
+    psetSelect: document.getElementById("psetSelect"),
+    propSelect: document.getElementById("propSelect")
+  };
+
+  function setStatus(msg){ els.status.textContent = msg; }
+  function setError(msg){ els.error.textContent = msg || ""; }
+  function norm(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+  function looksIfc(v){ const s = norm(v).toUpperCase(); return s.startsWith("IFC") ? s : ""; }
+
+  // ============================
+  // Filter: ignorer root/container entities
+  // ============================
+  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
+
+  function containsIfcTypeAnywhere(obj, ifcTypeUpper){
+    const target = ifcTypeUpper.toUpperCase();
+
+    const direct = [obj.ifcType, obj.ifcEntity, obj.entityType, obj.type, obj.objectType, obj.className, obj.class];
+    for (const c of direct){
+      const t = looksIfc(c);
+      if (t === target) return true;
     }
 
-    function setStatus(msg) {
-      document.getElementById("status").textContent = msg;
+    const nameCandidates = [obj.name, obj.objectName];
+    for (const c of nameCandidates){
+      const s = norm(c).toUpperCase();
+      if (s === target || s.includes(target)) return true;
     }
 
-    function setError(msg) {
-      document.getElementById("error").textContent = msg || "";
-    }
+    for (const ps of (obj.properties || [])){
+      const psName = norm(ps.name || ps.set).toUpperCase();
+      if (psName === target) return true;
 
-    function setObjectInfo(text) {
-      document.getElementById("objectInfo").textContent = text;
-    }
-
-    function setBik(display, psetName, raw) {
-      document.getElementById("bikValue").textContent = display || "Ikke funnet";
-      document.getElementById("bikPset").textContent =
-        psetName ? `Funnet i PropertySet: ${psetName}` : "";
-      document.getElementById("bikRaw").textContent =
-        raw ? `Raw-verdi: ${raw}` : "";
-    }
-
-    // ---------- workspace ----------
-    async function connectToWorkspace() {
-      API = await TrimbleConnectWorkspace.connect(
-        window.parent,
-        onWorkspaceEvent,
-        30000
-      );
-
-      console.log("Workspace API tilkoblet:", API);
-
-      if (!API.markup || typeof API.markup.addTextMarkup !== "function") {
-        setStatus("Tilkoblet (MarkupAPI ikke tilgjengelig – 3D-tekst støttes kanskje ikke).");
-      } else {
-        setStatus("Tilkoblet. Klikk på en kum for å vise Objektnavn + Kumtype + BIK i 3D.");
+      for (const p of (ps.properties || [])){
+        const pn = norm(p.name).toUpperCase();
+        const pv = norm(p.value).toUpperCase();
+        if (pn === target || pv === target) return true;
+        if (pn.includes(target) || pv.includes(target)) return true;
       }
     }
+    return false;
+  }
 
-    function onWorkspaceEvent(event, payload) {
-      console.log("Event fra Workspace:", event, payload);
+  function getIfcEntityType(obj){
+    const direct = looksIfc(obj.ifcType || obj.ifcEntity || obj.entityType || obj.type || obj.objectType || obj.className || obj.class);
+    if (direct) return direct;
 
-      if (event === "viewer.onSelectionChanged" || event === "selection-changed") {
-        handleSelectionChanged(payload);
+    const wanted = new Set([
+      "IFC TYPE","IFCTYPE","IFC ENTITY","IFCENTITY","ENTITY","ENTITY TYPE","ENTITYTYPE",
+      "CLASS","CLASSNAME","OBJECTTYPE","OBJECT TYPE","COMMON TYPE","IFC CLASS","IFCCLASS"
+    ]);
+
+    const psets = obj.properties || [];
+    for (const ps of psets){
+      for (const p of (ps.properties || [])){
+        const pn = norm(p.name).toUpperCase();
+        if (!wanted.has(pn)) continue;
+        const t = looksIfc(p.value);
+        if (t) return t;
       }
     }
+    return "";
+  }
 
-    // ---------- selection ----------
-    async function handleSelectionChanged(payload) {
-      try {
-        setError("");
+  function isIgnored(obj){
+    const t = getIfcEntityType(obj);
+    if (t && IGNORE_TYPES.has(t)) return true;
+    for (const it of IGNORE_TYPES){
+      if (containsIfcTypeAnywhere(obj, it)) return true;
+    }
+    return false;
+  }
+  // ============================
 
-        const selection = (payload && payload.data) || [];
-        if (!selection.length) {
-          setStatus("Ingen objekt valgt.");
-          setObjectInfo("Ingen objekt valgt. Klikk på en kum i modellen.");
-          setBik("Ikke funnet", "", "");
-          await clearTextMarkup();
-          return;
+  // ===== IFC GlobalId (IFC GUID) via convertToObjectIds =====
+  async function getIfcGlobalIdCached(modelId, runtimeId){
+    const key = `${modelId}:${runtimeId}`;
+    if (ifcIdCache.has(key)) return ifcIdCache.get(key);
+
+    let v = "";
+    try{
+      const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
+      v = (ids && ids[0]) ? String(ids[0]) : "";
+    }catch(e){ v = ""; }
+
+    ifcIdCache.set(key, v);
+    return v;
+  }
+  // =========================================================
+
+  // ------- Markup helpers -------
+  async function clearAllMarkups(){
+    try{
+      if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
+      if (lastMarkupIds.length){
+        await API.markup.removeMarkups(lastMarkupIds);
+      }
+    }catch(e){
+      console.warn("removeMarkups feilet:", e);
+    }finally{
+      lastMarkupIds = [];
+      setStatus("🧹 Påskrifter fjernet.");
+    }
+  }
+
+  async function addLabelForObject(modelId, runtimeId, labelText){
+    if (!API.markup || typeof API.markup.addTextMarkup !== "function") return null;
+
+    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
+    if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) return null;
+
+    const bb = boxes[0].boundingBox;
+    const min = bb.min, max = bb.max;
+
+    // Antakelse (som i eksempelkoden din): Y er opp, viewer-coords i meter -> markup expects mm
+    const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
+    const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
+    const topY_mm    = (max.y) * 1000.0;
+
+    const startPick = {
+      positionX: centerX_mm,
+      positionY: topY_mm + 200.0,    // 0.2m over topp
+      positionZ: centerZ_mm,
+      modelId: modelId,
+      objectId: runtimeId
+    };
+    const endPick = {
+      positionX: centerX_mm,
+      positionY: topY_mm + 1200.0,   // 1.2m over topp
+      positionZ: centerZ_mm,
+      modelId: modelId,
+      objectId: runtimeId
+    };
+
+    const textMarkup = {
+      start: startPick,
+      end: endPick,
+      text: labelText,
+      color: { r: 0, g: 0, b: 204, a: 255 }
+    };
+
+    const created = await API.markup.addTextMarkup([textMarkup]);
+    if (created && created.length && typeof created[0].id === "number") return created[0].id;
+    return null;
+  }
+
+  // ------- Property utilities -------
+  function getPsetName(ps){
+    // TC kan bruke name eller set
+    return ps.name || ps.set || "";
+  }
+
+  function getPsetProps(ps){
+    return ps.properties || [];
+  }
+
+  function findPropValue(objProps, targetPsetName, targetPropName){
+    const psets = objProps.properties || [];
+    for (const ps of psets){
+      const psName = getPsetName(ps);
+      if (psName !== targetPsetName) continue;
+
+      for (const p of getPsetProps(ps)){
+        if (p.name === targetPropName){
+          const v = p.value;
+          if (v === null || v === undefined) return "";
+          const s = String(v).trim();
+          return s;
         }
-
-        const first = selection[0];
-        const modelId = first.modelId;
-        const runtimeIds = first.objectRuntimeIds || [];
-
-        if (!modelId || !runtimeIds.length) {
-          setStatus("Ingen gyldig objekt i utvalget.");
-          setObjectInfo("Ingen gyldig objekt i utvalget.");
-          setBik("Ikke funnet", "", "");
-          await clearTextMarkup();
-          return;
-        }
-
-        const runtimeId = runtimeIds[0];
-
-        setObjectInfo(
-          `ModellId: ${modelId}, RuntimeId: ${runtimeId}, Klasse: ${first.class || "ukjent"}`
-        );
-        setStatus("Leser egenskaper for valgt objekt…");
-
-        const propsArray = await API.viewer.getObjectProperties(modelId, [runtimeId]);
-        console.log("getObjectProperties result:", propsArray);
-
-        if (!propsArray || !propsArray.length) {
-          setStatus("Fant ingen egenskaper for objektet.");
-          setBik("Ingen data", "", "");
-          await clearTextMarkup();
-          return;
-        }
-
-        const objProps = propsArray[0];
-        const result = findBikValue(objProps);
-
-        if (!result) {
-          setStatus(`Fant ikke '${TARGET_PROP}' på dette objektet.`);
-          setBik("Ikke funnet", "", "");
-          await clearTextMarkup();
-          return;
-        }
-
-        const { value, psetName } = result;
-        const num = parseFloat(value);
-        const display = isNaN(num) ? `${value}` : `${num}`;
-
-        const objectName = findObjectName(objProps);
-        const kumtype    = findKumtype(objProps);
-
-        setStatus(`Fant '${TARGET_PROP}' på dette objektet.`);
-        setBik(display, psetName, `${value}`);
-
-        await showBikTextMarkup(modelId, runtimeId, display, objectName, kumtype);
-      } catch (err) {
-        console.error("Feil i handleSelectionChanged:", err);
-        setError("Feil ved lesing av egenskaper: " + (err.message || err));
-        setStatus("Kunne ikke lese BIK-verdi.");
       }
     }
+    return "";
+  }
 
-    // ---------- property lookup ----------
-    function findBikValue(objProps) {
-      const psets = objProps.properties || [];
+  // ------- Scan all objects and build Pset/Prop list -------
+  async function scanModel(){
+    if (!API){ setError("API ikke klar."); return; }
 
-      for (const pset of psets) {
-        const psetName = pset.set || "";
-        const props = pset.properties || [];
+    setError("");
+    setStatus("🔍 Skanner modell…");
+    availableProps = {};
+    lastObjectIndex = new Map();
 
-        for (const p of props) {
-          const propNameNorm = normalizeName(p.name);
-          if (propNameNorm === TARGET_PROP_NORM) {
-            console.log("Fant BIK-property:", p, "i Pset:", psetName);
-            return {
-              value: p.value,
-              psetName: psetName
-            };
-          }
-        }
-      }
+    els.psetSelect.disabled = true;
+    els.propSelect.disabled = true;
+    els.showBtn.disabled = true;
 
-      console.log("Fant ikke BIK-property i objProps:", objProps);
-      return null;
-    }
-
-    function findObjectName(objProps) {
-      const psets = objProps.properties || [];
-
-      for (const pset of psets) {
-        const psetNameRaw = pset.set || "";
-        const psetNameNorm = normalizeName(psetNameRaw);
-        const props = pset.properties || [];
-
-        for (const p of props) {
-          const nameRaw = p.name || "";
-          const norm = normalizeName(nameRaw);
-
-          if (norm === "OBJEKTNAVN") {
-            return String(p.value || "");
-          }
-
-          if (norm.indexOf("OBJEKTNAVN") >= 0) {
-            return String(p.value || "");
-          }
-
-          if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "objektnavn") {
-            return String(p.value || "");
-          }
-        }
-      }
-      return "";
-    }
-
-    // Ny: Kumtype
-    function findKumtype(objProps) {
-      const psets = objProps.properties || [];
-
-      for (const pset of psets) {
-        const psetNameRaw = pset.set || "";
-        const psetNameNorm = normalizeName(psetNameRaw);
-        const props = pset.properties || [];
-
-        for (const p of props) {
-          const nameRaw = p.name || "";
-          const norm = normalizeName(nameRaw);
-
-          // Direkte match på Kumtype
-          if (norm === "KUMTYPE") {
-            return String(p.value || "");
-          }
-
-          // Inneholder KUMTYPE (for sikkerhets skyld)
-          if (norm.indexOf("KUMTYPE") >= 0) {
-            return String(p.value || "");
-          }
-
-          // Hvis det ligger i WS_Pset som "Kumtype"
-          if (psetNameNorm === "WS_PSET" && nameRaw.toLowerCase() === "kumtype") {
-            return String(p.value || "");
-          }
-        }
-      }
-      return "";
-    }
-
-    // ---------- markup helpers ----------
-    async function clearTextMarkup() {
-      try {
-        if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") {
-          return;
-        }
-        if (lastTextMarkupId != null) {
-          await API.markup.removeMarkups([lastTextMarkupId]);
-          lastTextMarkupId = null;
-        }
-      } catch (err) {
-        console.warn("Klarte ikke å fjerne markup:", err);
-      }
-    }
-
-    async function showBikTextMarkup(modelId, runtimeId, bikDisplay, objectName, kumtype) {
-      if (!API || !API.markup || typeof API.markup.addTextMarkup !== "function") {
-        console.warn("MarkupAPI ikke tilgjengelig – kan ikke tegne 3D-tekst.");
+    try{
+      const models = await API.viewer.getObjects();
+      if (!models || !models.length){
+        setStatus("ℹ️ Fant ingen objekter i visningen.");
         return;
       }
 
-      try {
-        const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
-        console.log("getObjectBoundingBoxes result:", boxes);
+      for (const m of models){
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
 
-        if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) {
-          console.warn("Ingen boundingBox for objektet – hopper over 3D-tekst.");
-          return;
+        const runtimeIds = objs.map(o => o.id);
+        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+        for (const obj of (objPropsArr || [])){
+          if (isIgnored(obj)) continue;
+
+          // indeks for senere (vi trenger runtimeId til markup)
+          lastObjectIndex.set(`${modelId}:${obj.id}`, { modelId, runtimeId: obj.id });
+
+          for (const ps of (obj.properties || [])){
+            const psName = getPsetName(ps);
+            if (!psName) continue;
+
+            if (!availableProps[psName]) availableProps[psName] = new Set();
+            for (const p of getPsetProps(ps)){
+              if (p && p.name) availableProps[psName].add(p.name);
+            }
+          }
         }
-
-        const bb = boxes[0].boundingBox;
-        const min = bb.min;
-        const max = bb.max;
-
-        // X/Y = senter i plan, Z = topp kum
-        const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
-        const centerY_mm = ((min.y + max.y) / 2.0) * 1000.0;
-        const topZ_mm    = (max.z) * 1000.0;
-
-        // Nær kummen: linje 0.4 m høy, start 0.15 m over toppen
-        const startPick = {
-          positionX: centerX_mm,
-          positionY: centerY_mm,
-          positionZ: topZ_mm + 150.0,   // 0.15 m over topp
-          modelId: modelId,
-          objectId: runtimeId
-        };
-
-        const endPick = {
-          positionX: centerX_mm,
-          positionY: centerY_mm,
-          positionZ: topZ_mm + 550.0,   // 0.55 m over topp (tekst rett over senter)
-          modelId: modelId,
-          objectId: runtimeId
-        };
-
-        await clearTextMarkup();
-
-        const lines = [];
-        if (objectName) lines.push(objectName);
-        if (kumtype)   lines.push(kumtype);
-        lines.push(`BIK: ${bikDisplay}`);
-
-        const text = lines.join("\n");
-
-        const textMarkup = {
-          start: startPick,
-          end: endPick,
-          text: text,
-          color: { r: 0, g: 0, b: 204, a: 255 } // mørk blå
-        };
-
-        const created = await API.markup.addTextMarkup([textMarkup]);
-        console.log("Opprettet text markup:", created);
-
-        if (created && created.length && typeof created[0].id === "number") {
-          lastTextMarkupId = created[0].id;
-        }
-
-        setStatus("Viser 3D-tekst rett over kummen (Objektnavn, Kumtype, BIK).");
-      } catch (err) {
-        console.error("Feil ved opprettelse av text markup:", err);
-        setError("Klarte ikke å lage 3D-tekst: " + (err.message || err));
       }
+
+      const psets = Object.keys(availableProps).sort((a,b)=>a.localeCompare(b,"nb"));
+      els.psetSelect.innerHTML = `<option value="">(velg…)</option>` +
+        psets.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+
+      els.psetSelect.disabled = !psets.length;
+      setStatus(psets.length ? "✅ Skann ferdig – velg Pset og Property." : "ℹ️ Ingen Pset funnet (etter filtrering).");
+    }catch(e){
+      console.error(e);
+      setError("Feil under skanning: " + (e.message || e));
+      setStatus("❌ Skann feilet.");
+    }
+  }
+
+  function populatePropSelect(psetName){
+    els.propSelect.innerHTML = `<option value="">(velg…)</option>`;
+    els.propSelect.disabled = true;
+    els.showBtn.disabled = true;
+
+    if (!psetName || !availableProps[psetName]) return;
+
+    const props = Array.from(availableProps[psetName]).sort((a,b)=>a.localeCompare(b,"nb"));
+    els.propSelect.innerHTML = `<option value="">(velg…)</option>` +
+      props.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+
+    els.propSelect.disabled = false;
+  }
+
+  // ------- Show labels for ALL objects that have selected value -------
+  async function showLabels(){
+    const psetName = els.psetSelect.value;
+    const propName = els.propSelect.value;
+    if (!psetName || !propName){
+      setError("Velg både Property Set og Property.");
+      return;
     }
 
-    // ---------- oppstart ----------
-    (async () => {
-      try {
-        await connectToWorkspace();
-      } catch (err) {
-        console.error(err);
-        setError("Klarte ikke å koble til Workspace API: " + (err.message || err));
-        setStatus("Feil.");
+    setError("");
+
+    if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
+      setError("Markup API er ikke tilgjengelig i denne visningen. (Kan ikke vise 3D-tekst.)");
+      return;
+    }
+
+    setStatus("🧠 Leser objekter og lager påskrifter…");
+    els.showBtn.disabled = true;
+
+    try{
+      // Rydd bort gamle først
+      await clearAllMarkups();
+
+      const models = await API.viewer.getObjects();
+      let createdCount = 0;
+      let withValueCount = 0;
+      let skippedNoBB = 0;
+
+      for (const m of models){
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
+
+        const runtimeIds = objs.map(o => o.id);
+        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+        for (const obj of (objPropsArr || [])){
+          if (isIgnored(obj)) continue;
+
+          const val = findPropValue(obj, psetName, propName);
+          if (!val) continue;
+
+          withValueCount++;
+
+          // Tekst: kun verdien (som du ønsket), men lett å utvide med objektnavn / IfcGlobalId
+          // const ifcId = await getIfcGlobalIdCached(modelId, obj.id);
+          const labelText = `${val}`;
+
+          const id = await addLabelForObject(modelId, obj.id, labelText);
+          if (typeof id === "number"){
+            lastMarkupIds.push(id);
+            createdCount++;
+          } else {
+            skippedNoBB++;
+          }
+        }
       }
-    })();
-  </script>
+
+      setStatus(`🏷️ Ferdig: Laget ${createdCount} påskrifter (fant ${withValueCount} med verdi).`);
+      if (skippedNoBB){
+        setError(`Merk: ${skippedNoBB} objekter hadde ikke bounding box, og fikk derfor ikke tekst.`);
+      }
+      els.clearBtn.disabled = false;
+    }catch(e){
+      console.error(e);
+      setError("Feil ved opprettelse av påskrifter: " + (e.message || e));
+      setStatus("❌ Kunne ikke lage påskrifter.");
+    }finally{
+      els.showBtn.disabled = false;
+    }
+  }
+
+  // ------- Helpers -------
+  function escapeHtml(str){
+    return String(str || "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#039;");
+  }
+
+  // ------- Events / init -------
+  async function connect(){
+    try{
+      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
+      setStatus("✅ Tilkoblet – trykk «Oppdater liste».");
+      els.scanBtn.disabled = false;
+
+      if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
+        setError("Merk: Markup API ser ikke ut til å være tilgjengelig – 3D-tekst kan være deaktivert i denne visningen.");
+      }
+    }catch(e){
+      setError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
+      setStatus("❌ Feil ved tilkobling.");
+    }
+  }
+
+  els.scanBtn.onclick = scanModel;
+  els.showBtn.onclick = showLabels;
+  els.clearBtn.onclick = clearAllMarkups;
+
+  els.psetSelect.onchange = () => {
+    populatePropSelect(els.psetSelect.value);
+    els.clearBtn.disabled = (lastMarkupIds.length === 0);
+  };
+
+  els.propSelect.onchange = () => {
+    els.showBtn.disabled = !(els.psetSelect.value && els.propSelect.value);
+  };
+
+  // enable clear if any
+  els.clearBtn.disabled = true;
+
+  // Start
+  connect();
+</script>
 </body>
 </html>
