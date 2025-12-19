@@ -2,294 +2,381 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty Labeler</title>
+  <title>MultiProperty Checker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
   <style>
     :root{
-      --primary:#0069d9; --success:#28a745; --danger:#e74c3c; --gray:#6c757d; --border:#dee2e6;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --primary:#0069d9; --success:#28a745; --danger:#e74c3c; --warning:#ffc107;
+      --light:#f8f9fa; --dark:#343a40; --gray:#6c757d; --border:#dee2e6;
     }
-    body{margin:0;background:#f5f5f7;color:#111827;min-height:100vh;display:flex;flex-direction:column;}
-    header{
-      display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border-bottom:1px solid #e5e7eb;
-      font-size:14px;font-weight:700;flex-wrap:wrap;
+    body{margin:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#e4edf5 100%);color:#333;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+    header{background:rgba(255,255,255,.95);backdrop-filter:blur(10px);padding:18px 24px;border-bottom:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.08);display:flex;flex-wrap:wrap;align-items:center;gap:18px;position:relative;z-index:10;}
+    .title-container{display:flex;align-items:center;gap:12px;flex:1;min-width:300px;}
+    .logo{width:144px;height:144px;border-radius:8px;object-fit:contain;box-shadow:0 2px 6px rgba(0,0,0,.1);background:#fff;padding:4px;}
+    .title-block{display:flex;flex-direction:column;}
+    .title{font-size:22px;font-weight:700;color:var(--primary);margin:0;}
+    .org{font-size:15px;font-weight:600;color:var(--dark);margin-top:-4px;}
+    .dev{font-size:12px;color:var(--gray);margin-top:-2px;font-style:italic;}
+    .subtitle{font-size:14px;color:var(--gray);font-style:italic;margin-left:auto;white-space:nowrap;}
+
+    label{font-weight:600;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap;}
+    select,button,input[type="number"]{
+      padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;
+      background:#fff;
     }
-    header .status{margin-left:auto;font-weight:400;font-size:12px;opacity:.8;white-space:nowrap;}
-    main{padding:12px;display:flex;flex-direction:column;gap:10px;}
-    .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06);padding:10px 12px;font-size:13px;}
-    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
-    label{font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap;}
-    select,button{
-      padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:13px;
+    select{min-width:180px;max-width:260px;}
+    select:focus,input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,105,217,.15);outline:none;}
+    button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;}
+    button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.15);}
+    button:disabled{background:var(--gray);cursor:not-allowed;transform:none;box-shadow:none;opacity:.85;}
+    button#scanButton{background:var(--success);} button#scanButton:hover:not(:disabled){background:#218838;}
+    button#applyLabelsButton{background:#00c2cb;} button#applyLabelsButton:hover:not(:disabled){background:#00a0aa;}
+    button#clearLabelsButton{background:var(--danger);} button#clearLabelsButton:hover:not(:disabled){background:#c0392b;}
+
+    .prop-group{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+    .button-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:flex-end;}
+    .small-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+
+    main{flex:1;padding:20px;overflow:auto;display:flex;flex-direction:column;gap:14px;position:relative;}
+
+    #status,#error{
+      text-align:center;font-size:15px;padding:10px 14px;border-radius:8px;
     }
-    select{min-width:260px;max-width:520px;background:#fff;}
-    button{border:none;cursor:pointer;font-weight:700;color:#fff;display:inline-flex;align-items:center;gap:6px;}
-    button:disabled{background:var(--gray);cursor:not-allowed;opacity:.85;}
-    #scanBtn{background:var(--success);}
-    #showBtn{background:var(--primary);}
-    #clearBtn{background:var(--danger);}
-    .muted{opacity:.75}
-    #error{color:#b91c1c;font-size:12px;min-height:16px;white-space:pre-wrap;}
-    .small{font-size:12px}
+    #status{background:rgba(40,167,69,.1);color:var(--success);border:1px solid rgba(40,167,69,.2);}
+    #error{background:rgba(220,53,69,.08);color:var(--danger);border:1px solid rgba(220,53,69,.15);display:none;}
+
+    .panel{
+      background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);
+      padding:16px 16px;
+    }
+    .panel h3{margin:0 0 10px 0;font-size:16px;color:var(--dark);}
+    .hint{font-size:12px;color:var(--gray);margin-top:6px;}
+    .footer-credit{text-align:center;font-size:14px;color:#888;margin-top:8px;font-style:italic;}
+
+    .table-wrap{max-height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;background:#fafafa;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    th,td{padding:6px 8px;border-bottom:1px solid #e7e7e7;text-align:left;white-space:nowrap;}
+    th{position:sticky;top:0;background:#f2f2f2;z-index:1;font-weight:700;}
+    tr:hover td{background:#eef6ff;}
+    .clickable{cursor:pointer;}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+
+    /* Overlay labels (fallback) */
+    #overlayLayer{
+      position:absolute; inset:0;
+      pointer-events:none;
+      z-index:5;
+    }
+    .ol-label{
+      position:absolute;
+      transform:translate(-50%,-100%);
+      background:rgba(0,0,0,.72);
+      color:#fff;
+      border-radius:8px;
+      padding:6px 8px;
+      font-size:11px;
+      line-height:1.2;
+      white-space:pre;
+      max-width:240px;
+      box-shadow:0 4px 10px rgba(0,0,0,.18);
+    }
+
+    @media (max-width:1024px){
+      header{flex-direction:column;align-items:stretch;}
+      .title-container{justify-content:center;}
+      .subtitle{margin-left:0;text-align:center;}
+      .prop-group{justify-content:center;}
+      .button-row{justify-content:center;}
+      .small-row{justify-content:center;}
+    }
   </style>
 </head>
 
 <body>
 <header>
-  MultiProperty Labeler (påskrift i 3D)
-  <span class="status" id="status">Kobler til Trimble Connect…</span>
+  <div class="title-container">
+    <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
+    <div class="title-block">
+      <h1 class="title">MultiProperty Checker</h1>
+      <div class="org">Norconsult Norge</div>
+      <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
+    </div>
+  </div>
+
+  <span class="subtitle">Påskrift i 3D basert på opptil 4 egenskaper</span>
+
+  <label>
+    Property Set:
+    <select id="psetSelect" disabled><option value="">(velg…)</option></select>
+  </label>
+
+  <div class="prop-group">
+    <label><input type="checkbox" id="cb1"> Property 1:
+      <select id="prop1" disabled><option value="">(ingen)</option></select>
+    </label>
+    <label><input type="checkbox" id="cb2"> Property 2:
+      <select id="prop2" disabled><option value="">(ingen)</option></select>
+    </label>
+    <label><input type="checkbox" id="cb3"> Property 3:
+      <select id="prop3" disabled><option value="">(ingen)</option></select>
+    </label>
+    <label><input type="checkbox" id="cb4"> Property 4:
+      <select id="prop4" disabled><option value="">(ingen)</option></select>
+    </label>
+  </div>
+
+  <div class="button-row">
+    <button id="scanButton" disabled>🔄 Oppdater liste</button>
+    <button id="applyLabelsButton" disabled>🏷️ Vis påskrift</button>
+    <button id="clearLabelsButton" disabled>🧹 Fjern påskrift</button>
+  </div>
 </header>
 
 <main>
-  <div class="card">
-    <div class="row">
-      <button id="scanBtn" disabled>🔎 Oppdater liste</button>
+  <div id="overlayLayer"></div>
 
-      <label>
-        Property Set:
-        <select id="psetSelect" disabled>
-          <option value="">(velg…)</option>
-        </select>
+  <div id="status">Kobler til Trimble Connect…</div>
+  <div id="error"></div>
+
+  <div class="panel">
+    <h3>Innstillinger</h3>
+    <div class="small-row" style="margin-bottom:8px;">
+      <label style="gap:6px;">
+        <input type="radio" name="scope" id="scopeSelected" checked>
+        Bruk valgte objekter
+      </label>
+      <label style="gap:6px;">
+        <input type="radio" name="scope" id="scopeAll">
+        Bruk alle objekter (begrens)
       </label>
 
-      <label>
-        Property:
-        <select id="propSelect" disabled>
-          <option value="">(velg…)</option>
-        </select>
+      <label title="Sikkerhetslimit hvis du velger alle objekter">
+        Maks:
+        <input id="maxObjects" type="number" value="200" min="1" max="5000" style="width:100px;">
+      </label>
+
+      <label style="gap:6px;" title="Viser 'Navn: Verdi' i stedet for bare verdier">
+        <input type="checkbox" id="showPropNames" checked>
+        Vis property-navn
       </label>
     </div>
 
-    <div class="row" style="margin-top:10px;">
-      <button id="showBtn" disabled>🏷️ Vis påskrift</button>
-      <button id="clearBtn" disabled>🧹 Fjern påskrifter</button>
-      <span class="muted small" id="info">
-        Filtrerer bort IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
-      </span>
+    <div class="hint">
+      Tips: Velg objekter i modellen først og trykk <b>Vis påskrift</b>.
+      Klikk i tabellen under for å zoome til et objekt.
     </div>
-
-    <div id="error"></div>
   </div>
 
-  <div class="card">
-    <div class="small muted">
-      Tips: Velg f.eks. <b>1_VA</b> → <b>Diameter Kumlokk (mm)</b> og trykk “Vis påskrift”.
-      Husk å slå på Markups/Annotations i visningen om du ikke ser tekst.
+  <div class="panel">
+    <h3>Objektliste (fra siste kjøring)</h3>
+    <div class="table-wrap">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>ModelId</th>
+            <th>RuntimeId</th>
+            <th class="mono">IfcGlobalId</th>
+            <th>ObjectName</th>
+            <th>Label-tekst</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
+    <div class="hint">NB: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY filtreres bort.</div>
+  </div>
+
+  <div class="footer-credit">
+    MultiProperty Checker – Påskrift i 3D basert på valgt Pset + egenskaper (opptil 4 linjer).<br>
+    (Feature-detection: bruker TC markups hvis støttet, ellers overlay-fallback.)
   </div>
 </main>
 
 <script>
   let API = null;
+  let availableProps = {};
+  let currentRunObjects = [];  // {modelId, runtimeId, ifcGlobalId, name, labelText, worldCenter?}
+  let overlayTimer = null;
 
-  // Cache og state
-  let availableProps = {};                 // { psetName: Set(props) }
-  let lastMarkupIds = [];                  // markups vi har lagt til (for rydding)
-  let lastObjectIndex = new Map();         // key: `${modelId}:${runtimeId}` -> {modelId, runtimeId}
-  const ifcIdCache = new Map();            // key: `${modelId}:${runtimeId}` -> IfcGlobalId
-
-  // UI
   const els = {
     status: document.getElementById("status"),
     error: document.getElementById("error"),
-    info: document.getElementById("info"),
-    scanBtn: document.getElementById("scanBtn"),
-    showBtn: document.getElementById("showBtn"),
-    clearBtn: document.getElementById("clearBtn"),
     psetSelect: document.getElementById("psetSelect"),
-    propSelect: document.getElementById("propSelect")
+    scanButton: document.getElementById("scanButton"),
+    applyLabelsButton: document.getElementById("applyLabelsButton"),
+    clearLabelsButton: document.getElementById("clearLabelsButton"),
+    overlayLayer: document.getElementById("overlayLayer"),
+    resultTbody: document.querySelector("#resultTable tbody"),
+    scopeSelected: document.getElementById("scopeSelected"),
+    scopeAll: document.getElementById("scopeAll"),
+    maxObjects: document.getElementById("maxObjects"),
+    showPropNames: document.getElementById("showPropNames")
   };
 
-  function setStatus(msg){ els.status.textContent = msg; }
-  function setError(msg){ els.error.textContent = msg || ""; }
-  function norm(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
-  function looksIfc(v){ const s = norm(v).toUpperCase(); return s.startsWith("IFC") ? s : ""; }
+  const propSelectIds = ["prop1","prop2","prop3","prop4"];
+  const cbIds = ["cb1","cb2","cb3","cb4"];
+
+  function showError(msg){
+    els.error.textContent = msg || "";
+    els.error.style.display = msg ? "block" : "none";
+  }
+  function setBusy(isBusy){
+    [els.scanButton, els.applyLabelsButton, els.clearLabelsButton].forEach(btn => {
+      if (!btn) return;
+      if (isBusy){ btn.dataset.prevDisabled = btn.disabled ? "true" : "false"; btn.disabled = true; }
+      else if (btn.dataset.prevDisabled === "false") btn.disabled = false;
+    });
+  }
 
   // ============================
-  // Filter: ignorer root/container entities
+  // Filter bort root/container IFC-entiteter
   // ============================
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
+  function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+  function looksLikeIfcEntityName(v){
+    const s = normStr(v).toUpperCase();
+    return s.startsWith("IFC") ? s : "";
+  }
   function containsIfcTypeAnywhere(obj, ifcTypeUpper){
     const target = ifcTypeUpper.toUpperCase();
-
-    const direct = [obj.ifcType, obj.ifcEntity, obj.entityType, obj.type, obj.objectType, obj.className, obj.class];
-    for (const c of direct){
-      const t = looksIfc(c);
+    const directCandidates = [obj.ifcType,obj.ifcEntity,obj.entityType,obj.type,obj.objectType,obj.className,obj.class];
+    for (const c of directCandidates){
+      const t = looksLikeIfcEntityName(c);
       if (t === target) return true;
     }
-
-    const nameCandidates = [obj.name, obj.objectName];
+    const nameCandidates = [obj.name,obj.objectName];
     for (const c of nameCandidates){
-      const s = norm(c).toUpperCase();
+      const s = normStr(c).toUpperCase();
       if (s === target || s.includes(target)) return true;
     }
-
-    for (const ps of (obj.properties || [])){
-      const psName = norm(ps.name || ps.set).toUpperCase();
+    for (const ps of (obj.properties||[])){
+      const psName = normStr(ps.name).toUpperCase();
       if (psName === target) return true;
-
-      for (const p of (ps.properties || [])){
-        const pn = norm(p.name).toUpperCase();
-        const pv = norm(p.value).toUpperCase();
+      for (const p of (ps.properties||[])){
+        const pn = normStr(p.name).toUpperCase();
+        const pv = normStr(p.value).toUpperCase();
         if (pn === target || pv === target) return true;
         if (pn.includes(target) || pv.includes(target)) return true;
       }
     }
     return false;
   }
-
-  function getIfcEntityType(obj){
-    const direct = looksIfc(obj.ifcType || obj.ifcEntity || obj.entityType || obj.type || obj.objectType || obj.className || obj.class);
+  function getIfcEntityTypeFromObjectProps(obj){
+    const direct = looksLikeIfcEntityName(obj.ifcType||obj.ifcEntity||obj.entityType||obj.type||obj.objectType||obj.className||obj.class);
     if (direct) return direct;
 
-    const wanted = new Set([
+    const wantedPropNames = new Set([
       "IFC TYPE","IFCTYPE","IFC ENTITY","IFCENTITY","ENTITY","ENTITY TYPE","ENTITYTYPE",
       "CLASS","CLASSNAME","OBJECTTYPE","OBJECT TYPE","COMMON TYPE","IFC CLASS","IFCCLASS"
     ]);
 
-    const psets = obj.properties || [];
+    const psets = (obj.properties||[]);
+    const prioritized=[], others=[];
     for (const ps of psets){
-      for (const p of (ps.properties || [])){
-        const pn = norm(p.name).toUpperCase();
-        if (!wanted.has(pn)) continue;
-        const t = looksIfc(p.value);
+      const n = normStr(ps.name).toLowerCase();
+      if (n.includes("reference object") || n==="ifc" || n.includes("component attributes")) prioritized.push(ps);
+      else others.push(ps);
+    }
+    const ordered = prioritized.concat(others);
+
+    for (const ps of ordered){
+      for (const p of (ps.properties||[])){
+        const pn = normStr(p.name).toUpperCase();
+        if (!wantedPropNames.has(pn)) continue;
+        const t = looksLikeIfcEntityName(p.value);
         if (t) return t;
       }
     }
     return "";
   }
-
-  function isIgnored(obj){
-    const t = getIfcEntityType(obj);
+  function isIgnoredIfcEntity(obj){
+    const t = getIfcEntityTypeFromObjectProps(obj);
     if (t && IGNORE_TYPES.has(t)) return true;
-    for (const it of IGNORE_TYPES){
-      if (containsIfcTypeAnywhere(obj, it)) return true;
-    }
+    for (const it of IGNORE_TYPES) if (containsIfcTypeAnywhere(obj,it)) return true;
     return false;
   }
   // ============================
 
-  // ===== IFC GlobalId (IFC GUID) via convertToObjectIds =====
+  // IFC GlobalId (IFC GUID) via convertToObjectIds
+  const ifcIdCache = new Map();
   async function getIfcGlobalIdCached(modelId, runtimeId){
     const key = `${modelId}:${runtimeId}`;
     if (ifcIdCache.has(key)) return ifcIdCache.get(key);
-
     let v = "";
     try{
       const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
       v = (ids && ids[0]) ? String(ids[0]) : "";
-    }catch(e){ v = ""; }
-
+    }catch{ v = ""; }
     ifcIdCache.set(key, v);
     return v;
   }
-  // =========================================================
 
-  // ------- Markup helpers -------
-  async function clearAllMarkups(){
+  async function zoomToObject(modelId, runtimeId){
+    const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
+    try { await API.viewer.setSelection(selector, "set"); }
+    catch { try { await API.viewer.setSelection(selector, "replace"); } catch {} }
+    try { await API.viewer.setCamera(selector, { animationTime: 650 }); }
+    catch {}
+  }
+
+  function resetPropertySelectors(){
+    propSelectIds.forEach(id => {
+      const s = document.getElementById(id);
+      s.innerHTML = '<option value="">(ingen)</option>';
+      s.disabled = true;
+    });
+    cbIds.forEach(id => document.getElementById(id).checked = false);
+  }
+
+  function populatePropSelects(pset){
+    resetPropertySelectors();
+    if (!pset || !availableProps[pset]) return;
+
+    const props = Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
+    propSelectIds.forEach(id => {
+      const sel = document.getElementById(id);
+      props.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        sel.appendChild(opt);
+      });
+      sel.disabled = false;
+    });
+  }
+
+  async function connect(){
     try{
-      if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
-      if (lastMarkupIds.length){
-        await API.markup.removeMarkups(lastMarkupIds);
-      }
+      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
+      els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente Property Sets.";
+      els.scanButton.disabled = false;
     }catch(e){
-      console.warn("removeMarkups feilet:", e);
-    }finally{
-      lastMarkupIds = [];
-      setStatus("🧹 Påskrifter fjernet.");
+      showError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
+      els.status.textContent = "❌ Feil ved tilkobling.";
     }
   }
 
-  async function addLabelForObject(modelId, runtimeId, labelText){
-    if (!API.markup || typeof API.markup.addTextMarkup !== "function") return null;
+  async function scanProperties(){
+    if (!API){ showError("API ikke klar."); return; }
 
-    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
-    if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) return null;
-
-    const bb = boxes[0].boundingBox;
-    const min = bb.min, max = bb.max;
-
-    // Antakelse (som i eksempelkoden din): Y er opp, viewer-coords i meter -> markup expects mm
-    const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
-    const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
-    const topY_mm    = (max.y) * 1000.0;
-
-    const startPick = {
-      positionX: centerX_mm,
-      positionY: topY_mm + 200.0,    // 0.2m over topp
-      positionZ: centerZ_mm,
-      modelId: modelId,
-      objectId: runtimeId
-    };
-    const endPick = {
-      positionX: centerX_mm,
-      positionY: topY_mm + 1200.0,   // 1.2m over topp
-      positionZ: centerZ_mm,
-      modelId: modelId,
-      objectId: runtimeId
-    };
-
-    const textMarkup = {
-      start: startPick,
-      end: endPick,
-      text: labelText,
-      color: { r: 0, g: 0, b: 204, a: 255 }
-    };
-
-    const created = await API.markup.addTextMarkup([textMarkup]);
-    if (created && created.length && typeof created[0].id === "number") return created[0].id;
-    return null;
-  }
-
-  // ------- Property utilities -------
-  function getPsetName(ps){
-    // TC kan bruke name eller set
-    return ps.name || ps.set || "";
-  }
-
-  function getPsetProps(ps){
-    return ps.properties || [];
-  }
-
-  function findPropValue(objProps, targetPsetName, targetPropName){
-    const psets = objProps.properties || [];
-    for (const ps of psets){
-      const psName = getPsetName(ps);
-      if (psName !== targetPsetName) continue;
-
-      for (const p of getPsetProps(ps)){
-        if (p.name === targetPropName){
-          const v = p.value;
-          if (v === null || v === undefined) return "";
-          const s = String(v).trim();
-          return s;
-        }
-      }
-    }
-    return "";
-  }
-
-  // ------- Scan all objects and build Pset/Prop list -------
-  async function scanModel(){
-    if (!API){ setError("API ikke klar."); return; }
-
-    setError("");
-    setStatus("🔍 Skanner modell…");
+    showError("");
     availableProps = {};
-    lastObjectIndex = new Map();
-
+    els.applyLabelsButton.disabled = true;
+    els.clearLabelsButton.disabled = true;
     els.psetSelect.disabled = true;
-    els.propSelect.disabled = true;
-    els.showBtn.disabled = true;
+    els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
+
+    els.status.textContent = "🔍 Skanner modell for Property Sets…";
+    setBusy(true);
 
     try{
       const models = await API.viewer.getObjects();
       if (!models || !models.length){
-        setStatus("ℹ️ Fant ingen objekter i visningen.");
+        els.status.textContent = "ℹ️ Fant ingen objekter i visningen.";
         return;
       }
 
@@ -299,168 +386,430 @@
         if (!modelId || !objs.length) continue;
 
         const runtimeIds = objs.map(o => o.id);
-        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+        if (!runtimeIds.length) continue;
 
-        for (const obj of (objPropsArr || [])){
-          if (isIgnored(obj)) continue;
+        const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
 
-          // indeks for senere (vi trenger runtimeId til markup)
-          lastObjectIndex.set(`${modelId}:${obj.id}`, { modelId, runtimeId: obj.id });
+        for (const obj of objProps || []){
+          if (isIgnoredIfcEntity(obj)) continue;
 
-          for (const ps of (obj.properties || [])){
-            const psName = getPsetName(ps);
-            if (!psName) continue;
-
-            if (!availableProps[psName]) availableProps[psName] = new Set();
-            for (const p of getPsetProps(ps)){
-              if (p && p.name) availableProps[psName].add(p.name);
+          for (const pset of (obj.properties || [])){
+            const name = pset.name || "";
+            if (!name) continue;
+            if (!availableProps[name]) availableProps[name] = new Set();
+            for (const p of (pset.properties || [])){
+              if (p.name) availableProps[name].add(p.name);
             }
           }
         }
       }
 
-      const psets = Object.keys(availableProps).sort((a,b)=>a.localeCompare(b,"nb"));
-      els.psetSelect.innerHTML = `<option value="">(velg…)</option>` +
-        psets.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+      const psetNames = Object.keys(availableProps);
+      if (!psetNames.length){
+        els.status.textContent = "ℹ️ Ingen Property Sets funnet (etter filtrering).";
+        return;
+      }
 
-      els.psetSelect.disabled = !psets.length;
-      setStatus(psets.length ? "✅ Skann ferdig – velg Pset og Property." : "ℹ️ Ingen Pset funnet (etter filtrering).");
+      psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
+        const opt=document.createElement("option");
+        opt.value=n; opt.textContent=n;
+        els.psetSelect.appendChild(opt);
+      });
+
+      els.psetSelect.disabled = false;
+      els.applyLabelsButton.disabled = false;
+      els.status.textContent = "✅ Ferdig skannet – velg Pset og opptil 4 properties. Trykk «Vis påskrift».";
     }catch(e){
-      console.error(e);
-      setError("Feil under skanning: " + (e.message || e));
-      setStatus("❌ Skann feilet.");
+      showError("Feil under skanning: " + (e && e.message ? e.message : e));
+      els.status.textContent = "❌ Klarte ikke å skanne.";
+    }finally{
+      setBusy(false);
     }
   }
 
-  function populatePropSelect(psetName){
-    els.propSelect.innerHTML = `<option value="">(velg…)</option>`;
-    els.propSelect.disabled = true;
-    els.showBtn.disabled = true;
-
-    if (!psetName || !availableProps[psetName]) return;
-
-    const props = Array.from(availableProps[psetName]).sort((a,b)=>a.localeCompare(b,"nb"));
-    els.propSelect.innerHTML = `<option value="">(velg…)</option>` +
-      props.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
-
-    els.propSelect.disabled = false;
+  function getSelectedProps(){
+    const props = [];
+    for (let i=1;i<=4;i++){
+      const cb = document.getElementById(`cb${i}`);
+      const sel = document.getElementById(`prop${i}`);
+      if (cb.checked && sel && sel.value) props.push(sel.value);
+    }
+    return props;
   }
 
-  // ------- Show labels for ALL objects that have selected value -------
-  async function showLabels(){
-    const psetName = els.psetSelect.value;
-    const propName = els.propSelect.value;
-    if (!psetName || !propName){
-      setError("Velg både Property Set og Property.");
-      return;
+  // Hent runtime IDs for scope (selected/all)
+  async function getScopeRuntimeIds(modelId, allRuntimeIds){
+    // selected
+    if (els.scopeSelected.checked){
+      try{
+        const sel = await API.viewer.getSelection();
+        const list = (sel && sel.modelObjectIds) ? sel.modelObjectIds : [];
+        const entry = list.find(x => String(x.modelId) === String(modelId));
+        const ids = (entry && entry.objectRuntimeIds) ? entry.objectRuntimeIds : [];
+        // fall back: if selection empty for this model, return []
+        return ids.map(Number).filter(n=>Number.isFinite(n));
+      }catch{
+        return [];
+      }
     }
 
-    setError("");
+    // all (limited)
+    const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
+    return allRuntimeIds.slice(0, max).map(Number).filter(n=>Number.isFinite(n));
+  }
 
-    if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
-      setError("Markup API er ikke tilgjengelig i denne visningen. (Kan ikke vise 3D-tekst.)");
-      return;
+  function getPropValueFromObjProps(obj, psetName, propName){
+    for (const ps of (obj.properties || [])){
+      if (ps.name !== psetName) continue;
+      for (const p of (ps.properties || [])){
+        if (p.name === propName) return p.value;
+      }
+    }
+    return undefined;
+  }
+
+  function buildLabelText(propNames, values, showNames){
+    const lines = [];
+    for (let i=0;i<propNames.length;i++){
+      const pn = propNames[i];
+      const v = values[i];
+      const vStr = (v===null||v===undefined||String(v).trim()==="") ? "" : String(v);
+      if (showNames) lines.push(`${pn}: ${vStr}`);
+      else lines.push(vStr);
+    }
+    // remove completely empty lines? keep blanks to preserve "under hverandre"
+    return lines.join("\n").trim();
+  }
+
+  // --- Markup / Overlay handling ---
+  const markupIds = [];          // if API supports markups
+  const overlayNodes = new Map();// key => DOM node
+  const worldCenters = new Map();// key => {x,y,z}
+
+  function clearOverlayDom(){
+    overlayNodes.forEach(n => n.remove());
+    overlayNodes.clear();
+    worldCenters.clear();
+  }
+
+  async function tryClearMarkups(){
+    // Try a few known patterns, but don't fail hard
+    try{
+      if (API.viewer.clearMarkups) await API.viewer.clearMarkups();
+    }catch{}
+    try{
+      if (API.viewer.removeMarkup){
+        while (markupIds.length){
+          const id = markupIds.pop();
+          try { await API.viewer.removeMarkup(id); } catch {}
+        }
+      } else {
+        markupIds.length = 0;
+      }
+    }catch{}
+  }
+
+  async function clearAllLabels(){
+    setBusy(true);
+    showError("");
+    try{
+      await tryClearMarkups();
+      clearOverlayDom();
+      stopOverlayLoop();
+      els.status.textContent = "🧹 Påskrift fjernet.";
+      els.clearLabelsButton.disabled = true;
+    }catch(e){
+      showError("Klarte ikke å fjerne påskrift: " + (e && e.message ? e.message : e));
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  function startOverlayLoop(){
+    stopOverlayLoop();
+    // update positions periodically (cheap)
+    overlayTimer = setInterval(() => {
+      updateOverlayPositions().catch(()=>{});
+    }, 200);
+  }
+  function stopOverlayLoop(){
+    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
+  }
+
+  async function updateOverlayPositions(){
+    if (!API) return;
+    if (!overlayNodes.size) return;
+
+    // we need world->screen projection
+    // Some TC versions provide viewer.worldToScreen or viewer.projectToScreen.
+    // We'll feature-detect a few names.
+    const projector =
+      API.viewer.worldToScreen ||
+      API.viewer.projectToScreen ||
+      API.viewer.convertWorldToScreen ||
+      null;
+
+    if (!projector) return;
+
+    for (const [key, node] of overlayNodes.entries()){
+      const c = worldCenters.get(key);
+      if (!c) continue;
+      let pt = null;
+      try{
+        pt = await projector.call(API.viewer, c); // expect {x,y} or [x,y]
+      }catch{
+        pt = null;
+      }
+      if (!pt) continue;
+
+      const x = Array.isArray(pt) ? pt[0] : pt.x;
+      const y = Array.isArray(pt) ? pt[1] : pt.y;
+
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+    }
+  }
+
+  async function ensureWorldCenters(modelObjectIds){
+    // Prefer API.viewer.getObjectBoundingBoxes if available
+    if (API.viewer.getObjectBoundingBoxes){
+      for (const mo of modelObjectIds){
+        const modelId = mo.modelId;
+        const ids = mo.objectRuntimeIds || [];
+        if (!ids.length) continue;
+
+        try{
+          const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
+          // Expect mapping runtimeId -> {min:{x,y,z}, max:{x,y,z}} or array aligned
+          if (Array.isArray(bbs)){
+            for (let i=0;i<ids.length;i++){
+              const bb = bbs[i];
+              if (!bb || !bb.min || !bb.max) continue;
+              const c = {
+                x: (bb.min.x + bb.max.x)/2,
+                y: (bb.min.y + bb.max.y)/2,
+                z: (bb.min.z + bb.max.z)/2
+              };
+              worldCenters.set(`${modelId}:${ids[i]}`, c);
+            }
+          } else if (typeof bbs === "object" && bbs !== null){
+            for (const rid of ids){
+              const bb = bbs[rid] || bbs[String(rid)];
+              if (!bb || !bb.min || !bb.max) continue;
+              const c = {
+                x: (bb.min.x + bb.max.x)/2,
+                y: (bb.min.y + bb.max.y)/2,
+                z: (bb.min.z + bb.max.z)/2
+              };
+              worldCenters.set(`${modelId}:${rid}`, c);
+            }
+          }
+        }catch{
+          // ignore
+        }
+      }
     }
 
-    setStatus("🧠 Leser objekter og lager påskrifter…");
-    els.showBtn.disabled = true;
+    // If still missing centers, leave them empty (overlay will not appear for those)
+  }
+
+  async function tryAdd3DMarkupLabel(modelId, runtimeId, labelText){
+    // Feature detect a few potential APIs (varies by version)
+    // Return true if succeeded
+    const center = worldCenters.get(`${modelId}:${runtimeId}`) || null;
+
+    // Possible APIs:
+    // - viewer.addMarkup({ ... })
+    // - viewer.addTextMarkup({ ... })
+    // We try common shapes, but keep it safe.
+    try{
+      if (API.viewer.addTextMarkup && center){
+        const id = await API.viewer.addTextMarkup({
+          modelId,
+          objectRuntimeId: Number(runtimeId),
+          text: labelText,
+          position: center
+        });
+        if (id) markupIds.push(id);
+        return true;
+      }
+    }catch{}
 
     try{
-      // Rydd bort gamle først
-      await clearAllMarkups();
+      if (API.viewer.addMarkup && center){
+        const id = await API.viewer.addMarkup({
+          type: "text",
+          modelId,
+          objectRuntimeId: Number(runtimeId),
+          text: labelText,
+          position: center
+        });
+        if (id) markupIds.push(id);
+        return true;
+      }
+    }catch{}
 
+    return false;
+  }
+
+  function addOverlayLabel(modelId, runtimeId, labelText){
+    const key = `${modelId}:${runtimeId}`;
+    // Need center and projector support; we still create node now
+    const node = document.createElement("div");
+    node.className = "ol-label";
+    node.textContent = labelText;
+    els.overlayLayer.appendChild(node);
+    overlayNodes.set(key, node);
+  }
+
+  function renderTable(rows){
+    els.resultTbody.innerHTML = "";
+    rows.forEach((r, idx) => {
+      const tr = document.createElement("tr");
+      tr.classList.add("clickable");
+      tr.addEventListener("click", async () => {
+        await zoomToObject(r.modelId, r.runtimeId);
+      });
+
+      const cols = [
+        idx+1,
+        r.modelId,
+        r.runtimeId,
+        r.ifcGlobalId || "",
+        r.name || "",
+        r.labelText || ""
+      ];
+
+      cols.forEach((c, i) => {
+        const td = document.createElement("td");
+        if (i === 3) td.classList.add("mono");
+        td.textContent = c;
+        tr.appendChild(td);
+      });
+
+      els.resultTbody.appendChild(tr);
+    });
+  }
+
+  async function applyLabels(){
+    if (!API){ showError("API ikke klar."); return; }
+    showError("");
+
+    const pset = els.psetSelect.value;
+    if (!pset){ showError("Velg et Property Set først."); return; }
+
+    const selectedProps = getSelectedProps();
+    if (!selectedProps.length){ showError("Huk av minst én property."); return; }
+
+    // Clear existing first
+    await clearAllLabels();
+
+    els.status.textContent = "🏷️ Leser egenskaper og lager påskrift…";
+    setBusy(true);
+
+    try{
       const models = await API.viewer.getObjects();
-      let createdCount = 0;
-      let withValueCount = 0;
-      let skippedNoBB = 0;
+      if (!models || !models.length){
+        els.status.textContent = "ℹ️ Fant ingen objekter.";
+        return;
+      }
 
+      const rows = [];
+      const showNames = !!els.showPropNames.checked;
+
+      // Build per-model list
       for (const m of models){
         const modelId = m.modelId || m.modelid || m["model Id"];
         const objs = m.objects || [];
         if (!modelId || !objs.length) continue;
 
-        const runtimeIds = objs.map(o => o.id);
-        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+        const allRuntimeIds = objs.map(o => o.id);
+        const scopeIds = await getScopeRuntimeIds(modelId, allRuntimeIds);
 
-        for (const obj of (objPropsArr || [])){
-          if (isIgnored(obj)) continue;
+        // If scope=selected and empty for this model, skip
+        if (els.scopeSelected.checked && (!scopeIds || !scopeIds.length)) continue;
+        if (!scopeIds.length) continue;
 
-          const val = findPropValue(obj, psetName, propName);
-          if (!val) continue;
+        // Load properties for scope IDs
+        const objProps = await API.viewer.getObjectProperties(modelId, scopeIds);
 
-          withValueCount++;
+        // Prepare centers (for markups/overlay)
+        await ensureWorldCenters([{ modelId, objectRuntimeIds: scopeIds }]);
 
-          // Tekst: kun verdien (som du ønsket), men lett å utvide med objektnavn / IfcGlobalId
-          // const ifcId = await getIfcGlobalIdCached(modelId, obj.id);
-          const labelText = `${val}`;
+        for (const obj of (objProps || [])){
+          if (isIgnoredIfcEntity(obj)) continue;
 
-          const id = await addLabelForObject(modelId, obj.id, labelText);
-          if (typeof id === "number"){
-            lastMarkupIds.push(id);
-            createdCount++;
-          } else {
-            skippedNoBB++;
+          const runtimeId = obj.id;
+          const values = selectedProps.map(pn => getPropValueFromObjProps(obj, pset, pn));
+          const labelText = buildLabelText(selectedProps, values, showNames);
+
+          // If absolutely empty label, skip
+          if (!labelText || labelText.trim()==="") continue;
+
+          const ifcGlobalId = await getIfcGlobalIdCached(modelId, runtimeId);
+
+          const row = {
+            modelId,
+            runtimeId,
+            ifcGlobalId,
+            name: obj.name || obj.objectName || "",
+            labelText
+          };
+          rows.push(row);
+
+          // Try 3D markup first; if not possible, overlay
+          const okMarkup = await tryAdd3DMarkupLabel(modelId, runtimeId, labelText);
+          if (!okMarkup){
+            addOverlayLabel(modelId, runtimeId, labelText);
           }
         }
       }
 
-      setStatus(`🏷️ Ferdig: Laget ${createdCount} påskrifter (fant ${withValueCount} med verdi).`);
-      if (skippedNoBB){
-        setError(`Merk: ${skippedNoBB} objekter hadde ikke bounding box, og fikk derfor ikke tekst.`);
+      currentRunObjects = rows;
+      renderTable(rows);
+
+      // Start overlay update loop if we used overlays
+      if (overlayNodes.size){
+        startOverlayLoop();
+        // Do an immediate update
+        await updateOverlayPositions();
       }
-      els.clearBtn.disabled = false;
+
+      if (!rows.length){
+        els.status.textContent = "ℹ️ Ingen labels ble laget. (Sjekk scope/valg og property-verdier.)";
+        els.clearLabelsButton.disabled = true;
+      } else {
+        els.status.textContent =
+          `✅ Laget påskrift for ${rows.length} objekt(er). ` +
+          (markupIds.length ? `3D-markups: ${markupIds.length}. ` : "") +
+          (overlayNodes.size ? `Overlay-labels: ${overlayNodes.size}.` : "");
+        els.clearLabelsButton.disabled = false;
+      }
     }catch(e){
-      console.error(e);
-      setError("Feil ved opprettelse av påskrifter: " + (e.message || e));
-      setStatus("❌ Kunne ikke lage påskrifter.");
+      showError("Feil ved påskrift: " + (e && e.message ? e.message : e));
+      els.status.textContent = "❌ Klarte ikke å lage påskrift.";
     }finally{
-      els.showBtn.disabled = false;
+      setBusy(false);
     }
   }
 
-  // ------- Helpers -------
-  function escapeHtml(str){
-    return String(str || "")
-      .replace(/&/g,"&amp;")
-      .replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;")
-      .replace(/"/g,"&quot;")
-      .replace(/'/g,"&#039;");
-  }
+  // UI hooks
+  cbIds.forEach((cbId, index) => {
+    const cb = document.getElementById(cbId);
+    const sel = document.getElementById(propSelectIds[index]);
+    cb.addEventListener("change", () => { if (!sel) return; if (!cb.checked) sel.value = ""; });
+  });
 
-  // ------- Events / init -------
-  async function connect(){
-    try{
-      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
-      setStatus("✅ Tilkoblet – trykk «Oppdater liste».");
-      els.scanBtn.disabled = false;
+  els.scanButton.onclick = scanProperties;
+  els.applyLabelsButton.onclick = applyLabels;
+  els.clearLabelsButton.onclick = clearAllLabels;
 
-      if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
-        setError("Merk: Markup API ser ikke ut til å være tilgjengelig – 3D-tekst kan være deaktivert i denne visningen.");
-      }
-    }catch(e){
-      setError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
-      setStatus("❌ Feil ved tilkobling.");
-    }
-  }
-
-  els.scanBtn.onclick = scanModel;
-  els.showBtn.onclick = showLabels;
-  els.clearBtn.onclick = clearAllMarkups;
-
-  els.psetSelect.onchange = () => {
-    populatePropSelect(els.psetSelect.value);
-    els.clearBtn.disabled = (lastMarkupIds.length === 0);
+  els.psetSelect.onchange = e => {
+    showError("");
+    populatePropSelects(e.target.value);
   };
 
-  els.propSelect.onchange = () => {
-    els.showBtn.disabled = !(els.psetSelect.value && els.propSelect.value);
-  };
-
-  // enable clear if any
-  els.clearBtn.disabled = true;
-
-  // Start
   connect();
 </script>
 </body>
