@@ -49,25 +49,17 @@
 
     .panel{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:16px 16px;}
     .panel h3{margin:0 0 10px 0;font-size:16px;color:var(--dark);}
-    .hint{font-size:12px;color:var(--gray);margin-top:6px;}
+    .hint{font-size:12px;color:var(--gray);margin-top:6px;line-height:1.4;}
     .footer-credit{text-align:center;font-size:14px;color:#888;margin-top:8px;font-style:italic;}
 
-    .table-wrap{max-height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;background:#fafafa;}
-    table{width:100%;border-collapse:collapse;font-size:12px;}
-    th,td{padding:6px 8px;border-bottom:1px solid #e7e7e7;text-align:left;white-space:nowrap;}
-    th{position:sticky;top:0;background:#f2f2f2;z-index:1;font-weight:700;}
-    tr:hover td{background:#eef6ff;}
-    .clickable{cursor:pointer;}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
-
     /* Overlay labels fallback */
-    #overlayLayer{position:absolute; inset:0; pointer-events:none; z-index:5;}
+    #overlayLayer{position:absolute; inset:0; pointer-events:none; z-index:50;}
     .ol-label{
       position:absolute; transform:translate(-50%,-100%);
       background:rgba(0,0,0,.72); color:#fff;
       border-radius:8px; padding:6px 8px;
       font-size:11px; line-height:1.2;
-      white-space:pre; max-width:240px;
+      white-space:pre; max-width:260px;
       box-shadow:0 4px 10px rgba(0,0,0,.18);
     }
 
@@ -86,12 +78,12 @@
 <body>
 <header>
   <div class="title-container">
-    <div class="logo-wrap" id="logoWrap">
+    <div class="logo-wrap">
       <img id="logoImg" class="logo" alt="Norconsult logo">
       <div id="logoFallback" class="logo-fallback" style="display:none;">Norconsult</div>
     </div>
     <div class="title-block">
-      <h1 class="title">MultiProperty Labeler</h1>
+      <h1 class="title">MultiProperty Checker</h1>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
@@ -162,48 +154,22 @@
     </div>
 
     <div class="hint">
-      Tips: Velg objekter i modellen først og trykk <b>Vis påskrift</b>.
-      Hvis du ikke ser tekst i 3D: sjekk at <b>Markups/Annotations</b> er slått på i visningen.
-      <br>Filtrerer bort: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
+      <b>Viktig:</b> Når du bruker <i>Bruk valgte objekter</i> må du markere ett eller flere objekt i 3D først (bruk pil/selection).<br>
+      Hvis du ikke ser tekst i 3D: slå på <b>Markups/Annotations</b> i visningen.<br>
+      <b>Filtrerer bort:</b> IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
     </div>
-  </div>
-
-  <div class="panel">
-    <h3>Objektliste (fra siste kjøring)</h3>
-    <div class="table-wrap">
-      <table id="resultTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>ModelId</th>
-            <th>RuntimeId</th>
-            <th class="mono">IfcGlobalId</th>
-            <th>ObjectName</th>
-            <th>Label-tekst</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <div class="hint">Klikk på en rad for å zoome til objektet.</div>
   </div>
 
   <div class="footer-credit">
-    MultiProperty Labeler – Påskrift i 3D basert på valgt Pset + opptil 4 properties (linjevis).
+    MultiProperty Labeler – robust selection + markups/overlay fallback.
   </div>
 </main>
 
 <script>
   // ----------------------------
-  // LOGO: prøv flere URL-er
-  // Bytt gjerne ut med din GitHub Pages URL om du vil:
-  // ex: "https://<bruker>.github.io/<repo>/norconsult-logo-black.png"
+  // Logo (robust) – prøv flere stier
   // ----------------------------
-  const LOGO_URLS = [
-    "norconsult-logo-black.png",
-    "./norconsult-logo-black.png"
-  ];
-
+  const LOGO_URLS = ["norconsult-logo-black.png", "./norconsult-logo-black.png"];
   const logoImg = document.getElementById("logoImg");
   const logoFallback = document.getElementById("logoFallback");
   let logoTryIndex = 0;
@@ -212,25 +178,20 @@
     if (logoTryIndex >= LOGO_URLS.length){
       logoImg.style.display = "none";
       logoFallback.style.display = "block";
-      // status-settes senere når API er koblet
       return;
     }
     const url = LOGO_URLS[logoTryIndex++];
-    logoImg.onload = () => {
-      logoImg.style.display = "block";
-      logoFallback.style.display = "none";
-    };
+    logoImg.onload = () => { logoImg.style.display = "block"; logoFallback.style.display = "none"; };
     logoImg.onerror = () => tryLoadLogo();
     logoImg.src = url;
   }
   tryLoadLogo();
 
   // ----------------------------
-  // App state
+  // State / refs
   // ----------------------------
   let API = null;
   let availableProps = {};
-  let currentRunObjects = [];
   let overlayTimer = null;
 
   const els = {
@@ -241,7 +202,6 @@
     applyLabelsButton: document.getElementById("applyLabelsButton"),
     clearLabelsButton: document.getElementById("clearLabelsButton"),
     overlayLayer: document.getElementById("overlayLayer"),
-    resultTbody: document.querySelector("#resultTable tbody"),
     scopeSelected: document.getElementById("scopeSelected"),
     scopeAll: document.getElementById("scopeAll"),
     maxObjects: document.getElementById("maxObjects"),
@@ -332,30 +292,7 @@
   }
 
   // ----------------------------
-  // IFC GlobalId from runtimeId
-  // ----------------------------
-  const ifcIdCache = new Map();
-  async function getIfcGlobalIdCached(modelId, runtimeId){
-    const key = `${modelId}:${runtimeId}`;
-    if (ifcIdCache.has(key)) return ifcIdCache.get(key);
-    let v = "";
-    try{
-      const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
-      v = (ids && ids[0]) ? String(ids[0]) : "";
-    }catch{ v = ""; }
-    ifcIdCache.set(key, v);
-    return v;
-  }
-
-  async function zoomToObject(modelId, runtimeId){
-    const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
-    try { await API.viewer.setSelection(selector, "set"); }
-    catch { try { await API.viewer.setSelection(selector, "replace"); } catch {} }
-    try { await API.viewer.setCamera(selector, { animationTime: 650 }); } catch {}
-  }
-
-  // ----------------------------
-  // UI: populate property dropdowns
+  // UI: property dropdowns
   // ----------------------------
   function resetPropertySelectors(){
     propSelectIds.forEach(id => {
@@ -394,7 +331,7 @@
   }
 
   // ----------------------------
-  // Overlay label fallback
+  // Overlay + markups (fallback)
   // ----------------------------
   const markupIds = [];
   const overlayNodes = new Map(); // key -> div
@@ -405,27 +342,12 @@
     overlayNodes.clear();
     worldCenters.clear();
   }
-
-  async function tryClearMarkups(){
-    try{ if (API.viewer.clearMarkups) await API.viewer.clearMarkups(); }catch{}
-    try{
-      if (API.viewer.removeMarkup){
-        while (markupIds.length){
-          const id = markupIds.pop();
-          try { await API.viewer.removeMarkup(id); } catch {}
-        }
-      } else {
-        markupIds.length = 0;
-      }
-    }catch{}
+  function stopOverlayLoop(){
+    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
   }
-
   function startOverlayLoop(){
     stopOverlayLoop();
     overlayTimer = setInterval(() => { updateOverlayPositions().catch(()=>{}); }, 200);
-  }
-  function stopOverlayLoop(){
-    if (overlayTimer){ clearInterval(overlayTimer); overlayTimer = null; }
   }
 
   async function updateOverlayPositions(){
@@ -449,50 +371,71 @@
       const x = Array.isArray(pt) ? pt[0] : pt.x;
       const y = Array.isArray(pt) ? pt[1] : pt.y;
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
       node.style.left = `${x}px`;
       node.style.top = `${y}px`;
     }
   }
 
-  async function ensureWorldCenters(modelObjectIds){
+  async function ensureWorldCenters(modelId, ids){
     if (!API.viewer.getObjectBoundingBoxes) return;
-    for (const mo of modelObjectIds){
-      const modelId = mo.modelId;
-      const ids = mo.objectRuntimeIds || [];
-      if (!ids.length) continue;
-
-      try{
-        const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
-        if (Array.isArray(bbs)){
-          for (let i=0;i<ids.length;i++){
-            const bb = bbs[i];
-            if (!bb || !bb.min || !bb.max) continue;
-            worldCenters.set(`${modelId}:${ids[i]}`, {
-              x:(bb.min.x+bb.max.x)/2,
-              y:(bb.min.y+bb.max.y)/2,
-              z:(bb.min.z+bb.max.z)/2
-            });
-          }
-        } else if (bbs && typeof bbs === "object"){
-          for (const rid of ids){
-            const bb = bbs[rid] || bbs[String(rid)];
-            if (!bb || !bb.min || !bb.max) continue;
-            worldCenters.set(`${modelId}:${rid}`, {
-              x:(bb.min.x+bb.max.x)/2,
-              y:(bb.min.y+bb.max.y)/2,
-              z:(bb.min.z+bb.max.z)/2
-            });
-          }
+    try{
+      const bbs = await API.viewer.getObjectBoundingBoxes(modelId, ids);
+      if (Array.isArray(bbs)){
+        for (let i=0;i<ids.length;i++){
+          const bb = bbs[i];
+          if (!bb || !bb.min || !bb.max) continue;
+          worldCenters.set(`${modelId}:${ids[i]}`, {
+            x:(bb.min.x+bb.max.x)/2,
+            y:(bb.min.y+bb.max.y)/2,
+            z:(bb.min.z+bb.max.z)/2
+          });
         }
-      }catch{}
-    }
+      } else if (bbs && typeof bbs === "object"){
+        for (const rid of ids){
+          const bb = bbs[rid] || bbs[String(rid)];
+          if (!bb || !bb.min || !bb.max) continue;
+          worldCenters.set(`${modelId}:${rid}`, {
+            x:(bb.min.x+bb.max.x)/2,
+            y:(bb.min.y+bb.max.y)/2,
+            z:(bb.min.z+bb.max.z)/2
+          });
+        }
+      }
+    }catch{}
+  }
+
+  async function tryClearMarkups(){
+    try{ if (API.viewer.clearMarkups) await API.viewer.clearMarkups(); }catch{}
+    try{
+      if (API.viewer.removeMarkup){
+        while (markupIds.length){
+          const id = markupIds.pop();
+          try { await API.viewer.removeMarkup(id); } catch {}
+        }
+      } else {
+        markupIds.length = 0;
+      }
+    }catch{}
+  }
+
+  function addOverlayLabel(modelId, runtimeId, labelText){
+    const key = `${modelId}:${runtimeId}`;
+    const node = document.createElement("div");
+    node.className = "ol-label";
+    node.textContent = labelText;
+    els.overlayLayer.appendChild(node);
+    overlayNodes.set(key, node);
   }
 
   async function tryAdd3DMarkupLabel(modelId, runtimeId, labelText){
     const center = worldCenters.get(`${modelId}:${runtimeId}`) || null;
 
+    // No center => can't do markup/overlay nicely
+    if (!center) return false;
+
     try{
-      if (API.viewer.addTextMarkup && center){
+      if (API.viewer.addTextMarkup){
         const id = await API.viewer.addTextMarkup({
           modelId,
           objectRuntimeId: Number(runtimeId),
@@ -505,7 +448,7 @@
     }catch{}
 
     try{
-      if (API.viewer.addMarkup && center){
+      if (API.viewer.addMarkup){
         const id = await API.viewer.addMarkup({
           type:"text",
           modelId,
@@ -521,17 +464,37 @@
     return false;
   }
 
-  function addOverlayLabel(modelId, runtimeId, labelText){
-    const key = `${modelId}:${runtimeId}`;
-    const node = document.createElement("div");
-    node.className = "ol-label";
-    node.textContent = labelText;
-    els.overlayLayer.appendChild(node);
-    overlayNodes.set(key, node);
+  // ----------------------------
+  // Read selection robustly
+  // ----------------------------
+  function extractRuntimeIdsFromSelectionEntry(entry){
+    if (!entry) return [];
+    const candidates = [
+      entry.objectRuntimeIds,
+      entry.objectIds,
+      entry.ids,
+      entry.runtimeIds
+    ];
+    for (const c of candidates){
+      if (Array.isArray(c) && c.length) return c.map(Number).filter(n=>Number.isFinite(n));
+    }
+    return [];
+  }
+
+  async function getSelectedRuntimeIdsPerModel(){
+    const map = new Map(); // modelId -> ids[]
+    const sel = await API.viewer.getSelection();
+    const list = (sel && Array.isArray(sel.modelObjectIds)) ? sel.modelObjectIds : [];
+    for (const entry of list){
+      const modelId = entry.modelId;
+      const ids = extractRuntimeIdsFromSelectionEntry(entry);
+      if (modelId !== undefined && ids.length) map.set(String(modelId), ids);
+    }
+    return map;
   }
 
   // ----------------------------
-  // Data helpers
+  // Properties
   // ----------------------------
   function getPropValueFromObjProps(obj, psetName, propName){
     for (const ps of (obj.properties || [])){
@@ -548,63 +511,17 @@
     for (let i=0;i<propNames.length;i++){
       const pn = propNames[i];
       const v = values[i];
-      const vStr = (v===null||v===undefined||String(v).trim()==="") ? "" : String(v);
+      const vStr = (v===null||v===undefined) ? "" : String(v).trim();
       lines.push(showNames ? `${pn}: ${vStr}` : vStr);
     }
-    return lines.join("\n").trim();
-  }
-
-  function renderTable(rows){
-    els.resultTbody.innerHTML = "";
-    rows.forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      tr.classList.add("clickable");
-      tr.addEventListener("click", async () => zoomToObject(r.modelId, r.runtimeId));
-
-      const cols = [
-        idx+1,
-        r.modelId,
-        r.runtimeId,
-        r.ifcGlobalId || "",
-        r.name || "",
-        r.labelText || ""
-      ];
-
-      cols.forEach((c, i) => {
-        const td = document.createElement("td");
-        if (i === 3) td.classList.add("mono");
-        td.textContent = c;
-        tr.appendChild(td);
-      });
-
-      els.resultTbody.appendChild(tr);
-    });
+    // Ikke trim til tom hvis alt er blankt – men hvis absolutt ingenting, returner tom
+    const joined = lines.join("\n");
+    const hasAny = joined.replace(/\s/g, "").length > 0;
+    return hasAny ? joined : "";
   }
 
   // ----------------------------
-  // Scope helper
-  // ----------------------------
-  async function getScopeRuntimeIds(modelId, allRuntimeIds){
-    // selected
-    if (els.scopeSelected && els.scopeSelected.checked){
-      try{
-        const sel = await API.viewer.getSelection();
-        const list = (sel && sel.modelObjectIds) ? sel.modelObjectIds : [];
-        const entry = list.find(x => String(x.modelId) === String(modelId));
-        const ids = (entry && entry.objectRuntimeIds) ? entry.objectRuntimeIds : [];
-        return ids.map(Number).filter(n=>Number.isFinite(n));
-      }catch{
-        return [];
-      }
-    }
-
-    // all (limited)
-    const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
-    return allRuntimeIds.slice(0, max).map(Number).filter(n=>Number.isFinite(n));
-  }
-
-  // ----------------------------
-  // Main actions
+  // Actions
   // ----------------------------
   async function clearAllLabels(){
     setBusy(true);
@@ -634,7 +551,7 @@
 
     await clearAllLabels();
 
-    els.status.textContent = "🏷️ Leser egenskaper og lager påskrift…";
+    els.status.textContent = "🏷️ Leser objekter og lager påskrift…";
     setBusy(true);
 
     try{
@@ -644,60 +561,96 @@
         return;
       }
 
-      const rows = [];
       const showNames = !!els.showPropNames.checked;
+      let created = 0;
+      let considered = 0;
+
+      // Selection map (for selected scope)
+      let selectedMap = null;
+      if (els.scopeSelected.checked){
+        selectedMap = await getSelectedRuntimeIdsPerModel();
+        if (!selectedMap.size){
+          showError("Ingen valgte objekter funnet. Marker ett eller flere objekt i 3D først (pil/selection), og prøv igjen.");
+          els.status.textContent = "⛔ Ingen labels ble laget (tom selection).";
+          return;
+        }
+      }
+
+      // Detect projector support for overlay
+      const projector =
+        API.viewer.worldToScreen ||
+        API.viewer.projectToScreen ||
+        API.viewer.convertWorldToScreen ||
+        null;
 
       for (const m of models){
-        const modelId = m.modelId || m.modelid || m["model Id"];
+        const modelIdRaw = m.modelId || m.modelid || m["model Id"];
+        if (modelIdRaw === undefined || modelIdRaw === null) continue;
+        const modelId = String(modelIdRaw);
+
         const objs = m.objects || [];
-        if (!modelId || !objs.length) continue;
+        if (!objs.length) continue;
 
-        const allRuntimeIds = objs.map(o => o.id);
-        const scopeIds = await getScopeRuntimeIds(modelId, allRuntimeIds);
-        if (!scopeIds.length) continue;
+        let ids = [];
+        if (els.scopeSelected.checked){
+          ids = selectedMap.get(modelId) || [];
+          if (!ids.length) continue;
+        } else {
+          const max = Math.max(1, Math.min(5000, Number(els.maxObjects.value || 200)));
+          ids = objs.map(o => o.id).slice(0, max).map(Number).filter(n=>Number.isFinite(n));
+        }
 
-        const objProps = await API.viewer.getObjectProperties(modelId, scopeIds);
+        // For positions
+        await ensureWorldCenters(modelId, ids);
 
-        await ensureWorldCenters([{ modelId, objectRuntimeIds: scopeIds }]);
+        // Pull properties for these ids
+        const objProps = await API.viewer.getObjectProperties(modelId, ids);
 
         for (const obj of (objProps || [])){
           if (isIgnoredIfcEntity(obj)) continue;
 
+          considered++;
+
           const runtimeId = obj.id;
           const values = selectedProps.map(pn => getPropValueFromObjProps(obj, pset, pn));
           const labelText = buildLabelText(selectedProps, values, showNames);
+
+          // Hvis alt er tomt, hopp
           if (!labelText) continue;
 
-          const ifcGlobalId = await getIfcGlobalIdCached(modelId, runtimeId);
-
-          rows.push({
-            modelId,
-            runtimeId,
-            ifcGlobalId,
-            name: obj.name || obj.objectName || "",
-            labelText
-          });
-
+          // 1) Try markup
           const okMarkup = await tryAdd3DMarkupLabel(modelId, runtimeId, labelText);
-          if (!okMarkup) addOverlayLabel(modelId, runtimeId, labelText);
+
+          // 2) Fallback overlay (hvis vi kan projisere)
+          if (!okMarkup){
+            addOverlayLabel(modelId, runtimeId, labelText);
+          }
+
+          created++;
         }
       }
 
-      currentRunObjects = rows;
-      renderTable(rows);
-
-      if (overlayNodes.size){
+      // Overlay loop (only useful if projector exists)
+      if (overlayNodes.size && projector){
         startOverlayLoop();
         await updateOverlayPositions();
       }
 
-      if (!rows.length){
-        els.status.textContent = "ℹ️ Ingen påskrifter ble laget (sjekk scope/valg og property-verdier).";
+      // If overlay created but projector missing => tell user why they won't see it
+      if (overlayNodes.size && !projector){
+        els.status.textContent =
+          `⚠️ Laget ${created} labels (fallback overlay), men din TC-viewer støtter ikke world→screen projeksjon i APIet, ` +
+          `så overlay kan ikke plasseres korrekt. Markups/Annotations-funksjon trengs for ekte 3D-tekst.`;
+        els.clearLabelsButton.disabled = false;
+        return;
+      }
+
+      if (!created){
+        els.status.textContent = "ℹ️ Ingen labels ble laget. (Sjekk at valgt objekt faktisk har Pset/egenskaper, eller prøv 'Bruk alle objekter'.)";
+        showError("");
         els.clearLabelsButton.disabled = true;
       } else {
-        let msg = `✅ Ferdig: Laget ${rows.length} påskrift(er).`;
-        if (!logoImg || logoImg.style.display === "none") msg += " (Logo kunne ikke lastes – sjekk filplassering/URL.)";
-        els.status.textContent = msg;
+        els.status.textContent = `✅ Ferdig: Laget ${created} påskrift(er) (vurdert ${considered} objekt).`;
         els.clearLabelsButton.disabled = false;
       }
     }catch(e){
@@ -736,7 +689,7 @@
         const runtimeIds = objs.map(o => o.id);
         if (!runtimeIds.length) continue;
 
-        const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+        const objProps = await API.viewer.getObjectProperties(String(modelId), runtimeIds);
         for (const obj of (objProps || [])){
           if (isIgnoredIfcEntity(obj)) continue;
 
@@ -781,7 +734,6 @@
       els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente Property Sets.";
       els.scanButton.disabled = false;
 
-      // varsle logo-problem tidlig
       setTimeout(() => {
         if (logoImg.style.display === "none") {
           els.status.textContent += " ⚠️ Logo ikke lastet – sjekk at 'norconsult-logo-black.png' ligger i samme mappe som HTML (eller bruk full URL).";
@@ -793,7 +745,7 @@
     }
   }
 
-  // Hook checkboxes: hvis du unchecker -> nullstill dropdown
+  // checkbox behavior
   cbIds.forEach((cbId, index) => {
     const cb = document.getElementById(cbId);
     const sel = document.getElementById(propSelectIds[index]);
