@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty Checker – 3D Påskrift</title>
+  <title>MultiProperty Labeler</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -15,43 +15,31 @@
     body{margin:0;background:#f5f5f7;color:#111827;min-height:100vh;display:flex;flex-direction:column;}
     header{
       display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border-bottom:1px solid #e5e7eb;
-      font-size:14px;font-weight:800;flex-wrap:wrap;
+      font-size:14px;font-weight:700;flex-wrap:wrap;
     }
-    header .status{margin-left:auto;font-weight:500;font-size:12px;opacity:.8;white-space:nowrap;}
-    main{padding:12px;display:flex;flex-direction:column;gap:10px;max-width:1100px;}
-    .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06);padding:12px 14px;font-size:13px;}
+    header .status{margin-left:auto;font-weight:400;font-size:12px;opacity:.8;white-space:nowrap;}
+    main{padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(15,23,42,.06);padding:10px 12px;font-size:13px;}
     .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
-    label{font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap;}
+    label{font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap;}
     select,button{
       padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:13px;
     }
     select{min-width:260px;max-width:520px;background:#fff;}
-    button{border:none;cursor:pointer;font-weight:800;color:#fff;display:inline-flex;align-items:center;gap:6px;}
+    button{border:none;cursor:pointer;font-weight:700;color:#fff;display:inline-flex;align-items:center;gap:6px;}
     button:disabled{background:var(--gray);cursor:not-allowed;opacity:.85;}
     #scanBtn{background:var(--success);}
+    #showBtn{background:var(--primary);}
     #clearBtn{background:var(--danger);}
     .muted{opacity:.75}
+    #error{color:#b91c1c;font-size:12px;min-height:16px;white-space:pre-wrap;}
     .small{font-size:12px}
-    #error{color:#b91c1c;font-size:12px;min-height:16px;white-space:pre-wrap;margin-top:6px;}
-    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fafafa;font-size:12px;}
-    .props-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px;}
-    @media (min-width: 880px){
-      .props-grid{grid-template-columns:1fr 1fr;}
-    }
-    .prop-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-    .prop-line input{transform:scale(1.05);}
-    .prop-line select{min-width:320px;max-width:520px;}
-    code.kv{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-      font-size:12px;
-      background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;display:inline-block;
-    }
   </style>
 </head>
 
 <body>
 <header>
-  MultiProperty Checker – 3D Påskrift
+  MultiProperty Labeler (påskrift i 3D)
   <span class="status" id="status">Kobler til Trimble Connect…</span>
 </header>
 
@@ -67,44 +55,29 @@
         </select>
       </label>
 
-      <button id="clearBtn" disabled>🧹 Fjern påskrift</button>
-
-      <span class="pill" id="hint">
-        Klikk på et objekt i modellen for å vise påskrift (opptil 4 properties).
-      </span>
+      <label>
+        Property:
+        <select id="propSelect" disabled>
+          <option value="">(velg…)</option>
+        </select>
+      </label>
     </div>
 
-    <div class="props-grid">
-      <div class="prop-line">
-        <label><input type="checkbox" id="cb1"> Property 1:</label>
-        <select id="prop1" disabled><option value="">(ingen)</option></select>
-      </div>
-      <div class="prop-line">
-        <label><input type="checkbox" id="cb2"> Property 2:</label>
-        <select id="prop2" disabled><option value="">(ingen)</option></select>
-      </div>
-      <div class="prop-line">
-        <label><input type="checkbox" id="cb3"> Property 3:</label>
-        <select id="prop3" disabled><option value="">(ingen)</option></select>
-      </div>
-      <div class="prop-line">
-        <label><input type="checkbox" id="cb4"> Property 4:</label>
-        <select id="prop4" disabled><option value="">(ingen)</option></select>
-      </div>
+    <div class="row" style="margin-top:10px;">
+      <button id="showBtn" disabled>🏷️ Vis påskrift</button>
+      <button id="clearBtn" disabled>🧹 Fjern påskrifter</button>
+      <span class="muted small" id="info">
+        Filtrerer bort IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.
+      </span>
     </div>
 
     <div id="error"></div>
   </div>
 
   <div class="card">
-    <div class="small muted" style="line-height:1.45">
-      • Påskrift vises kun for <b>valgt objekt</b> (klikk i 3D).<br>
-      • Filtrerer bort: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY.<br>
-      • Krever at <b>Markups/Annotations</b> er slått på i viewer.
-    </div>
-    <div style="margin-top:10px">
-      <div class="small muted">Siste påskrift-tekst:</div>
-      <code class="kv" id="lastText">(ingen)</code>
+    <div class="small muted">
+      Tips: Velg f.eks. <b>1_VA</b> → <b>Diameter Kumlokk (mm)</b> og trykk “Vis påskrift”.
+      Husk å slå på Markups/Annotations i visningen om du ikke ser tekst.
     </div>
   </div>
 </main>
@@ -112,32 +85,31 @@
 <script>
   let API = null;
 
-  // ====== State ======
-  let availableProps = {};      // { psetName: Set(propNames) }
-  let lastTextMarkupId = null;  // id til siste tekst-markup
+  // Cache og state
+  let availableProps = {};                 // { psetName: Set(props) }
+  let lastMarkupIds = [];                  // markups vi har lagt til (for rydding)
+  let lastObjectIndex = new Map();         // key: `${modelId}:${runtimeId}` -> {modelId, runtimeId}
+  const ifcIdCache = new Map();            // key: `${modelId}:${runtimeId}` -> IfcGlobalId
 
-  // ====== UI refs ======
+  // UI
   const els = {
     status: document.getElementById("status"),
     error: document.getElementById("error"),
+    info: document.getElementById("info"),
     scanBtn: document.getElementById("scanBtn"),
+    showBtn: document.getElementById("showBtn"),
     clearBtn: document.getElementById("clearBtn"),
     psetSelect: document.getElementById("psetSelect"),
-    lastText: document.getElementById("lastText")
+    propSelect: document.getElementById("propSelect")
   };
-
-  const cbIds = ["cb1","cb2","cb3","cb4"];
-  const propSelectIds = ["prop1","prop2","prop3","prop4"];
 
   function setStatus(msg){ els.status.textContent = msg; }
   function setError(msg){ els.error.textContent = msg || ""; }
-  function setLastText(msg){ els.lastText.textContent = msg || "(ingen)"; }
-
   function norm(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
   function looksIfc(v){ const s = norm(v).toUpperCase(); return s.startsWith("IFC") ? s : ""; }
 
   // ============================
-  // Filter: ignorer container/root entities
+  // Filter: ignorer root/container entities
   // ============================
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
@@ -201,110 +173,118 @@
   }
   // ============================
 
-  // ---------- Markup helpers ----------
-  async function clearTextMarkup(){
+  // ===== IFC GlobalId (IFC GUID) via convertToObjectIds =====
+  async function getIfcGlobalIdCached(modelId, runtimeId){
+    const key = `${modelId}:${runtimeId}`;
+    if (ifcIdCache.has(key)) return ifcIdCache.get(key);
+
+    let v = "";
+    try{
+      const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
+      v = (ids && ids[0]) ? String(ids[0]) : "";
+    }catch(e){ v = ""; }
+
+    ifcIdCache.set(key, v);
+    return v;
+  }
+  // =========================================================
+
+  // ------- Markup helpers -------
+  async function clearAllMarkups(){
     try{
       if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
-      if (lastTextMarkupId != null){
-        await API.markup.removeMarkups([lastTextMarkupId]);
-        lastTextMarkupId = null;
+      if (lastMarkupIds.length){
+        await API.markup.removeMarkups(lastMarkupIds);
       }
-      els.clearBtn.disabled = true;
-      setLastText("(ingen)");
     }catch(e){
-      console.warn("Klarte ikke å fjerne markup:", e);
+      console.warn("removeMarkups feilet:", e);
+    }finally{
+      lastMarkupIds = [];
+      setStatus("🧹 Påskrifter fjernet.");
     }
   }
 
-  async function showTextMarkup(modelId, runtimeId, text){
-    if (!API || !API.markup || typeof API.markup.addTextMarkup !== "function"){
-      setError("Markup API er ikke tilgjengelig. Kan ikke vise 3D-tekst.");
-      return;
-    }
+  async function addLabelForObject(modelId, runtimeId, labelText){
+    if (!API.markup || typeof API.markup.addTextMarkup !== "function") return null;
 
-    // Bounding box
     const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
-    if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) {
-      setError("Fant ikke bounding box for objektet – kan ikke plassere påskrift.");
-      return;
-    }
+    if (!boxes || !boxes.length || !boxes[0] || !boxes[0].boundingBox) return null;
 
     const bb = boxes[0].boundingBox;
     const min = bb.min, max = bb.max;
 
-    // Antar Y er opp, meter -> mm
+    // Antakelse (som i eksempelkoden din): Y er opp, viewer-coords i meter -> markup expects mm
     const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
     const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
     const topY_mm    = (max.y) * 1000.0;
 
     const startPick = {
       positionX: centerX_mm,
-      positionY: topY_mm + 200.0,
+      positionY: topY_mm + 200.0,    // 0.2m over topp
       positionZ: centerZ_mm,
       modelId: modelId,
       objectId: runtimeId
     };
     const endPick = {
       positionX: centerX_mm,
-      positionY: topY_mm + 1200.0,
+      positionY: topY_mm + 1200.0,   // 1.2m over topp
       positionZ: centerZ_mm,
       modelId: modelId,
       objectId: runtimeId
     };
 
-    await clearTextMarkup();
-
     const textMarkup = {
       start: startPick,
       end: endPick,
-      text: text,
+      text: labelText,
       color: { r: 0, g: 0, b: 204, a: 255 }
     };
 
     const created = await API.markup.addTextMarkup([textMarkup]);
-    if (created && created.length && typeof created[0].id === "number"){
-      lastTextMarkupId = created[0].id;
-      els.clearBtn.disabled = false;
+    if (created && created.length && typeof created[0].id === "number") return created[0].id;
+    return null;
+  }
+
+  // ------- Property utilities -------
+  function getPsetName(ps){
+    // TC kan bruke name eller set
+    return ps.name || ps.set || "";
+  }
+
+  function getPsetProps(ps){
+    return ps.properties || [];
+  }
+
+  function findPropValue(objProps, targetPsetName, targetPropName){
+    const psets = objProps.properties || [];
+    for (const ps of psets){
+      const psName = getPsetName(ps);
+      if (psName !== targetPsetName) continue;
+
+      for (const p of getPsetProps(ps)){
+        if (p.name === targetPropName){
+          const v = p.value;
+          if (v === null || v === undefined) return "";
+          const s = String(v).trim();
+          return s;
+        }
+      }
     }
+    return "";
   }
 
-  // ---------- Pset scanning ----------
-  function resetPropSelects(){
-    propSelectIds.forEach(id => {
-      const s = document.getElementById(id);
-      s.innerHTML = '<option value="">(ingen)</option>';
-      s.disabled = true;
-    });
-    cbIds.forEach(id => document.getElementById(id).checked = false);
-  }
-
-  function populatePropSelects(psetName){
-    resetPropSelects();
-    if (!psetName || !availableProps[psetName]) return;
-
-    const props = Array.from(availableProps[psetName]).sort((a,b)=>a.localeCompare(b,"nb"));
-    propSelectIds.forEach(id => {
-      const sel = document.getElementById(id);
-      props.forEach(p => {
-        const opt = document.createElement("option");
-        opt.value = p;
-        opt.textContent = p;
-        sel.appendChild(opt);
-      });
-      sel.disabled = false;
-    });
-
-    setStatus("✅ Velg opptil 4 properties. Klikk deretter på objekt i modellen for påskrift.");
-  }
-
-  async function scanModelForPsets(){
+  // ------- Scan all objects and build Pset/Prop list -------
+  async function scanModel(){
     if (!API){ setError("API ikke klar."); return; }
-    setError("");
-    setStatus("🔍 Skanner modell for Property Sets…");
 
+    setError("");
+    setStatus("🔍 Skanner modell…");
     availableProps = {};
+    lastObjectIndex = new Map();
+
     els.psetSelect.disabled = true;
-    resetPropSelects();
+    els.propSelect.disabled = true;
+    els.showBtn.disabled = true;
 
     try{
       const models = await API.viewer.getObjects();
@@ -324,12 +304,15 @@
         for (const obj of (objPropsArr || [])){
           if (isIgnored(obj)) continue;
 
+          // indeks for senere (vi trenger runtimeId til markup)
+          lastObjectIndex.set(`${modelId}:${obj.id}`, { modelId, runtimeId: obj.id });
+
           for (const ps of (obj.properties || [])){
-            const psName = ps.name || ps.set || "";
+            const psName = getPsetName(ps);
             if (!psName) continue;
 
             if (!availableProps[psName]) availableProps[psName] = new Set();
-            for (const p of (ps.properties || [])){
+            for (const p of getPsetProps(ps)){
               if (p && p.name) availableProps[psName].add(p.name);
             }
           }
@@ -337,133 +320,148 @@
       }
 
       const psets = Object.keys(availableProps).sort((a,b)=>a.localeCompare(b,"nb"));
-      els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
-      psets.forEach(n => {
-        const opt = document.createElement("option");
-        opt.value = n;
-        opt.textContent = n;
-        els.psetSelect.appendChild(opt);
-      });
+      els.psetSelect.innerHTML = `<option value="">(velg…)</option>` +
+        psets.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
 
       els.psetSelect.disabled = !psets.length;
-      setStatus(psets.length ? "✅ Skann ferdig – velg Property Set." : "ℹ️ Ingen Property Sets funnet (etter filtrering).");
+      setStatus(psets.length ? "✅ Skann ferdig – velg Pset og Property." : "ℹ️ Ingen Pset funnet (etter filtrering).");
     }catch(e){
       console.error(e);
       setError("Feil under skanning: " + (e.message || e));
-      setStatus("❌ Skanning feilet.");
+      setStatus("❌ Skann feilet.");
     }
   }
 
-  // ---------- Build label text from selected props ----------
-  function getSelectedProps(){
-    const selected = [];
-    for (let i=1;i<=4;i++){
-      const cb = document.getElementById(`cb${i}`);
-      const sel = document.getElementById(`prop${i}`);
-      if (cb.checked && sel && sel.value){
-        selected.push(sel.value);
-      }
-    }
-    return selected;
+  function populatePropSelect(psetName){
+    els.propSelect.innerHTML = `<option value="">(velg…)</option>`;
+    els.propSelect.disabled = true;
+    els.showBtn.disabled = true;
+
+    if (!psetName || !availableProps[psetName]) return;
+
+    const props = Array.from(availableProps[psetName]).sort((a,b)=>a.localeCompare(b,"nb"));
+    els.propSelect.innerHTML = `<option value="">(velg…)</option>` +
+      props.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+
+    els.propSelect.disabled = false;
   }
 
-  function readPropValue(objProps, psetName, propName){
-    const psets = objProps.properties || [];
-    for (const ps of psets){
-      const name = ps.name || ps.set || "";
-      if (name !== psetName) continue;
+  // ------- Show labels for ALL objects that have selected value -------
+  async function showLabels(){
+    const psetName = els.psetSelect.value;
+    const propName = els.propSelect.value;
+    if (!psetName || !propName){
+      setError("Velg både Property Set og Property.");
+      return;
+    }
 
-      for (const p of (ps.properties || [])){
-        if (p.name === propName){
-          const v = p.value;
-          if (v === null || v === undefined) return "";
-          return String(v).trim();
+    setError("");
+
+    if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
+      setError("Markup API er ikke tilgjengelig i denne visningen. (Kan ikke vise 3D-tekst.)");
+      return;
+    }
+
+    setStatus("🧠 Leser objekter og lager påskrifter…");
+    els.showBtn.disabled = true;
+
+    try{
+      // Rydd bort gamle først
+      await clearAllMarkups();
+
+      const models = await API.viewer.getObjects();
+      let createdCount = 0;
+      let withValueCount = 0;
+      let skippedNoBB = 0;
+
+      for (const m of models){
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
+
+        const runtimeIds = objs.map(o => o.id);
+        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+        for (const obj of (objPropsArr || [])){
+          if (isIgnored(obj)) continue;
+
+          const val = findPropValue(obj, psetName, propName);
+          if (!val) continue;
+
+          withValueCount++;
+
+          // Tekst: kun verdien (som du ønsket), men lett å utvide med objektnavn / IfcGlobalId
+          // const ifcId = await getIfcGlobalIdCached(modelId, obj.id);
+          const labelText = `${val}`;
+
+          const id = await addLabelForObject(modelId, obj.id, labelText);
+          if (typeof id === "number"){
+            lastMarkupIds.push(id);
+            createdCount++;
+          } else {
+            skippedNoBB++;
+          }
         }
       }
-    }
-    return "";
-  }
 
-  function buildLabelText(psetName, selectedProps, objProps){
-    const lines = [];
-    for (const prop of selectedProps){
-      const v = readPropValue(objProps, psetName, prop);
-      // Vis også "mangler" tydelig:
-      lines.push(`${prop}: ${v ? v : "(mangler)"}`);
-    }
-    return lines.join("\n");
-  }
-
-  // ---------- Selection changed: show markup for clicked object ----------
-  async function handleSelectionChanged(payload){
-    try{
-      setError("");
-
-      const psetName = els.psetSelect.value;
-      if (!psetName){
-        setStatus("Velg Property Set først.");
-        await clearTextMarkup();
-        return;
+      setStatus(`🏷️ Ferdig: Laget ${createdCount} påskrifter (fant ${withValueCount} med verdi).`);
+      if (skippedNoBB){
+        setError(`Merk: ${skippedNoBB} objekter hadde ikke bounding box, og fikk derfor ikke tekst.`);
       }
-
-      const selectedProps = getSelectedProps();
-      if (!selectedProps.length){
-        setStatus("Huk av minst én property for påskrift.");
-        await clearTextMarkup();
-        return;
-      }
-
-      const selection = (payload && payload.data) || [];
-      if (!selection.length){
-        setStatus("Ingen objekt valgt.");
-        await clearTextMarkup();
-        return;
-      }
-
-      const first = selection[0];
-      const modelId = first.modelId;
-      const runtimeIds = first.objectRuntimeIds || [];
-      if (!modelId || !runtimeIds.length){
-        setStatus("Ingen gyldig objekt i utvalget.");
-        await clearTextMarkup();
-        return;
-      }
-
-      const runtimeId = runtimeIds[0];
-
-      // Hent egenskaper kun for valgt objekt
-      setStatus("Leser egenskaper for valgt objekt…");
-      const arr = await API.viewer.getObjectProperties(modelId, [runtimeId]);
-      if (!arr || !arr.length){
-        setStatus("Fant ingen egenskaper for objektet.");
-        await clearTextMarkup();
-        return;
-      }
-
-      const objProps = arr[0];
-
-      // Filtrer bort root/container hvis bruker klikker dem
-      if (isIgnored(objProps)){
-        setStatus("Valgt objekt er et container/root-objekt (filtrert bort).");
-        await clearTextMarkup();
-        return;
-      }
-
-      const text = buildLabelText(psetName, selectedProps, objProps);
-      setLastText(text);
-
-      await showTextMarkup(modelId, runtimeId, text);
-      setStatus("🏷️ Påskrift vist over valgt objekt. (Klikk på nytt objekt for å oppdatere.)");
+      els.clearBtn.disabled = false;
     }catch(e){
       console.error(e);
-      setError("Feil ved håndtering av valg: " + (e.message || e));
-      setStatus("❌ Kunne ikke lage påskrift.");
+      setError("Feil ved opprettelse av påskrifter: " + (e.message || e));
+      setStatus("❌ Kunne ikke lage påskrifter.");
+    }finally{
+      els.showBtn.disabled = false;
     }
   }
 
-  // ---------- Workspace connect + events ----------
-  function onWorkspaceEvent(event, payload){
-    if (event === "viewer.onSelectionChanged" || event === "selection-changed"){
-      handleSelectionChanged(payload);
+  // ------- Helpers -------
+  function escapeHtml(str){
+    return String(str || "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#039;");
+  }
+
+  // ------- Events / init -------
+  async function connect(){
+    try{
+      API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
+      setStatus("✅ Tilkoblet – trykk «Oppdater liste».");
+      els.scanBtn.disabled = false;
+
+      if (!API.markup || typeof API.markup.addTextMarkup !== "function"){
+        setError("Merk: Markup API ser ikke ut til å være tilgjengelig – 3D-tekst kan være deaktivert i denne visningen.");
+      }
+    }catch(e){
+      setError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
+      setStatus("❌ Feil ved tilkobling.");
     }
   }
+
+  els.scanBtn.onclick = scanModel;
+  els.showBtn.onclick = showLabels;
+  els.clearBtn.onclick = clearAllMarkups;
+
+  els.psetSelect.onchange = () => {
+    populatePropSelect(els.psetSelect.value);
+    els.clearBtn.disabled = (lastMarkupIds.length === 0);
+  };
+
+  els.propSelect.onchange = () => {
+    els.showBtn.disabled = !(els.psetSelect.value && els.propSelect.value);
+  };
+
+  // enable clear if any
+  els.clearBtn.disabled = true;
+
+  // Start
+  connect();
+</script>
+</body>
+</html>
