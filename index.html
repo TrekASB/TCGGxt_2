@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiPropertyLabel</title>
+  <title>MMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -58,13 +58,6 @@
     #resetListBtn{background:var(--warn); color:#111827;}
     button:disabled{opacity:.6;cursor:not-allowed;}
 
-    .toggle{
-      display:flex;align-items:center;gap:8px;
-      padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;
-      font-size:12px;color:#111827;
-    }
-    .toggle input{transform:scale(1.05);}
-
     table{width:100%;border-collapse:collapse;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top;}
     th{background:#f8fafc;position:sticky;top:0;z-index:1;}
@@ -88,7 +81,7 @@
   </div>
 
   <div class="titleBlock">
-    <div class="title">MultiPropertyLabel</div>
+    <div class="title">MMIXtractor</div>
     <div class="org">Norconsult Norge</div>
     <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
@@ -111,20 +104,6 @@
         <button id="csvBtn" disabled style="width:auto;padding:10px 12px;">📤 Eksporter CSV</button>
         <button id="resetListBtn" disabled style="width:auto;padding:10px 12px;">🗑️ Tøm liste</button>
         <button id="clearBtn" disabled style="width:auto;padding:10px 12px;">🧹 Fjern påskrift</button>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px;">
-      <div class="toggle">
-        <input type="checkbox" id="autoCompact" checked />
-        <span style="font-weight:900;">Auto-komprimer ved zoom</span>
-      </div>
-
-      <div class="toggle" title="Hvilken kameradistanse som utløser komprimering (om getCamera støttes).">
-        <span style="font-weight:900;">Kompakt ved distanse &gt;</span>
-        <input id="compactThreshold" type="number" value="120" min="10" step="10"
-               style="width:90px;padding:6px 8px;border-radius:8px;border:1px solid #d1d5db;" />
-        <span class="muted">m</span>
       </div>
     </div>
 
@@ -164,7 +143,7 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
-      <b>NB:</b> Fontstørrelse kan ikke styres direkte av Markup API, derfor reduserer vi overlapp ved å <b>komprimere</b> tekst når du zoomer ut.
+      <b>NB:</b> Markup API lar oss ikke styre font/size direkte. For å unngå overlapp ved zoom ut, gjør vi teksten <b>kortere</b> automatisk (færre linjer).
     </div>
   </div>
 
@@ -211,6 +190,9 @@
   let refreshRunId = 0;
   let camDebounce = null;
 
+  // Zoom-ut terskel for å korte ned tekst (ikke "auto-komprimer toggle" – alltid aktivt)
+  const COMPACT_DISTANCE_M = 120;
+
   const els = {
     status: document.getElementById("status"),
     error: document.getElementById("error"),
@@ -225,9 +207,7 @@
     psetC: document.getElementById("psetC"),
     a: [document.getElementById("a1"),document.getElementById("a2"),document.getElementById("a3"),document.getElementById("a4")],
     b: [document.getElementById("b1"),document.getElementById("b2"),document.getElementById("b3"),document.getElementById("b4")],
-    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")],
-    autoCompact: document.getElementById("autoCompact"),
-    compactThreshold: document.getElementById("compactThreshold")
+    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")]
   };
 
   function nowMs(){ return Date.now(); }
@@ -403,7 +383,7 @@
     return lines.join("\n");
   }
 
-  // Kompakt tekst: reduser overlapp ved zoom ut
+  // Zoom-ut: kortere tekst (færre linjer) for å redusere overlapp
   function buildCompactText(config, objProps){
     const lines = [];
     for (const block of config){
@@ -424,7 +404,6 @@
     return lines.slice(0, 4).join("\n");
   }
 
-  // Kamera distanse (om støttet)
   async function getCameraDistanceMeters(){
     try{
       if (!API?.viewer?.getCamera) return null;
@@ -441,11 +420,10 @@
     }catch(e){ return null; }
   }
 
-  function wantCompact(distanceMeters){
-    if (!els.autoCompact.checked) return false;
-    const thr = Number(els.compactThreshold.value || 120);
-    if (!distanceMeters || !Number.isFinite(distanceMeters)) return true;
-    return distanceMeters > thr;
+  async function isZoomedOut(){
+    const dist = await getCameraDistanceMeters();
+    if (!dist || !Number.isFinite(dist)) return true; // hvis ukjent, antar zoom ut
+    return dist > COMPACT_DISTANCE_M;
   }
 
   function scheduleRebuildMarkupsOnly(){
@@ -566,8 +544,7 @@
     const myRun = ++refreshRunId;
 
     try{
-      const dist = await getCameraDistanceMeters();
-      const compact = wantCompact(dist);
+      const zoomedOut = await isZoomedOut();
 
       await clearMarkups();
       if (myRun !== refreshRunId) return;
@@ -578,7 +555,7 @@
       for (const it of picked.values()){
         if (myRun !== refreshRunId) return;
 
-        const text = compact ? (it.compactText || it.fullText || "") : (it.fullText || "");
+        const text = zoomedOut ? (it.compactText || it.fullText || "") : (it.fullText || "");
         if (!norm(text)) continue;
 
         const mid = await addTextMarkupOverObject(it.modelId, Number(it.runtimeId), text, idx++);
@@ -586,7 +563,7 @@
       }
 
       els.clearBtn.disabled = !lastMarkupIds.length;
-      setStatus(compact ? `Kompakt visning (zoom ut). Påskrifter: ${made}.` : `Full visning (zoom inn). Påskrifter: ${made}.`);
+      setStatus(zoomedOut ? `Zoom ut: kortere tekst. Påskrifter: ${made}.` : `Zoom inn: full tekst. Påskrifter: ${made}.`);
     }catch(e){
       console.error(e);
       setError("Klarte ikke å bygge om påskrifter: " + (e.message || e));
@@ -721,7 +698,7 @@
     const link = document.createElement("a");
     const dateStr = new Date().toISOString().slice(0,10);
     link.href = url;
-    link.download = `TC_MultiPropertyLabel_ValgteObjekter_${dateStr}.csv`;
+    link.download = `TC_MMIXtractor_ValgteObjekter_${dateStr}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -867,9 +844,8 @@
       els.clearBtn.disabled = false;
       setStatus("✅ Tilkoblet. Trykk «Oppdater liste» for å fylle Pset/Property.");
 
-      // Poll kamera: komprimering ved zoom ut
+      // Poll kamera (for å korte ned tekst ved zoom ut)
       setInterval(async () => {
-        if (!els.autoCompact.checked) return;
         if (!picked.size) return;
         scheduleRebuildMarkupsOnly();
       }, 1200);
@@ -894,8 +870,6 @@
   els.psetC.addEventListener("change", () => onPsetChanged(els.psetC, els.c));
 
   [...els.a, ...els.b, ...els.c].forEach(sel => sel.addEventListener("change", refreshFromPicked));
-  els.autoCompact.addEventListener("change", scheduleRebuildMarkupsOnly);
-  els.compactThreshold.addEventListener("change", scheduleRebuildMarkupsOnly);
 
   connect();
 </script>
