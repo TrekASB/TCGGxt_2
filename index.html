@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiPropertyLabel</title>
+  <title>MultiProperty Påskrift</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -55,6 +55,13 @@
     #resetListBtn{background:var(--warn); color:#111827;}
     button:disabled{opacity:.6;cursor:not-allowed;}
 
+    .toggle{
+      display:flex;align-items:center;gap:8px;
+      padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;
+      font-size:12px;color:#111827;
+    }
+    .toggle input{transform:scale(1.05);}
+
     table{width:100%;border-collapse:collapse;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top;}
     th{background:#f8fafc;position:sticky;top:0;z-index:1;}
@@ -77,7 +84,7 @@
          onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
   <div class="titleBlock">
-    <div class="title">MultiPropertyLabel</div>
+    <div class="title">MultiProperty Påskrift</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
   </div>
   <div class="status" id="status">Kobler til Trimble Connect…</div>
@@ -89,7 +96,9 @@
       <div class="row" style="gap:8px;align-items:center;">
         <span class="pill">Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b></span>
         <span class="pill">Klikk i 3D = <b>toggle</b> inn/ut av liste</span>
+        <span class="pill">Ctrl/Shift i TC = <b>multi-select</b></span>
       </div>
+
       <div class="row" style="gap:8px;">
         <button id="scanBtn" disabled style="width:auto;padding:10px 12px;">🔄 Oppdater liste</button>
         <button id="csvBtn" disabled style="width:auto;padding:10px 12px;">📤 Eksporter CSV</button>
@@ -97,6 +106,21 @@
         <button id="clearBtn" disabled style="width:auto;padding:10px 12px;">🧹 Fjern påskrift</button>
       </div>
     </div>
+
+    <div class="row" style="margin-top:10px;">
+      <div class="toggle">
+        <input type="checkbox" id="autoCompact" checked />
+        <span style="font-weight:900;">Auto-komprimer ved zoom</span>
+      </div>
+
+      <div class="toggle" title="Hvilken kameradistanse som utløser komprimering (om getCamera støttes).">
+        <span style="font-weight:900;">Kompakt ved distanse &gt;</span>
+        <input id="compactThreshold" type="number" value="120" min="10" step="10"
+               style="width:90px;padding:6px 8px;border-radius:8px;border:1px solid #d1d5db;" />
+        <span class="muted">m</span>
+      </div>
+    </div>
+
     <div id="error"></div>
 
     <div class="grid3" style="margin-top:10px;">
@@ -133,10 +157,7 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
-      <b>NB:</b> Denne versjonen bruker <b>ingen</b> dynamisk tekst (alltid full tekst).
-      <br><br>
-      <b>Font/size:</b> Trimble Connect Markup API lar normalt ikke tvinge <i>Times New Roman 12</i> via script.
-      Vi viser derfor konstant tekstinnhold, men viewer bestemmer font/visuell størrelse.
+      <b>NB:</b> Fontstørrelse kan ikke styres direkte av Markup API, derfor reduserer vi overlapp ved å <b>komprimere</b> tekst når du zoomer ut.
     </div>
   </div>
 
@@ -153,7 +174,7 @@
             <th style="width:52px;">#</th>
             <th style="width:220px;">Objektnavn</th>
             <th style="width:240px;">IfcGlobalId (GUID)</th>
-            <th>Påskrift (full)</th>
+            <th>Påskrift</th>
           </tr>
         </thead>
         <tbody id="tbody">
@@ -167,16 +188,40 @@
 <script>
   let API = null;
   let availableProps = {};
-  let lastMarkupIds = [];
   const ifcGuidCache = new Map();
 
-  const picked = new Map(); // key modelId:runtimeId -> { modelId, runtimeId, name, guid, labelText }
+  let lastMarkupIds = [];
+  const picked = new Map(); // key modelId:runtimeId -> {modelId,runtimeId,name,guid,fullText,compactText}
 
-  // --- Selection guards (løser "Tøm liste" -> gamle objekter kommer tilbake) ---
+  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
+
+  // Guards: løser "Tøm liste" -> gamle objekter popper tilbake
   let lastSelectionSnapshot = "";
+  let lastProgrammaticSnapshot = "";
   let selectionLockUntil = 0;
   let selectionLockDepth = 0;
-  let lastProgrammaticSnapshot = "";
+
+  let refreshRunId = 0;
+  let camDebounce = null;
+
+  const els = {
+    status: document.getElementById("status"),
+    error: document.getElementById("error"),
+    scanBtn: document.getElementById("scanBtn"),
+    clearBtn: document.getElementById("clearBtn"),
+    csvBtn: document.getElementById("csvBtn"),
+    resetListBtn: document.getElementById("resetListBtn"),
+    countInfo: document.getElementById("countInfo"),
+    tbody: document.getElementById("tbody"),
+    psetA: document.getElementById("psetA"),
+    psetB: document.getElementById("psetB"),
+    psetC: document.getElementById("psetC"),
+    a: [document.getElementById("a1"),document.getElementById("a2"),document.getElementById("a3"),document.getElementById("a4")],
+    b: [document.getElementById("b1"),document.getElementById("b2"),document.getElementById("b3"),document.getElementById("b4")],
+    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")],
+    autoCompact: document.getElementById("autoCompact"),
+    compactThreshold: document.getElementById("compactThreshold")
+  };
 
   function nowMs(){ return Date.now(); }
   function lockSelectionFor(ms){ selectionLockUntil = Math.max(selectionLockUntil, nowMs() + ms); }
@@ -191,33 +236,9 @@
     }
   }
 
-  // Abort/dedupe async refresh
-  let refreshRunId = 0;
-
-  // IFC filter
-  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
-
-  const els = {
-    status: document.getElementById("status"),
-    error: document.getElementById("error"),
-    scanBtn: document.getElementById("scanBtn"),
-    clearBtn: document.getElementById("clearBtn"),
-    csvBtn: document.getElementById("csvBtn"),
-    resetListBtn: document.getElementById("resetListBtn"),
-    countInfo: document.getElementById("countInfo"),
-    tbody: document.getElementById("tbody"),
-
-    psetA: document.getElementById("psetA"),
-    psetB: document.getElementById("psetB"),
-    psetC: document.getElementById("psetC"),
-
-    a: [document.getElementById("a1"),document.getElementById("a2"),document.getElementById("a3"),document.getElementById("a4")],
-    b: [document.getElementById("b1"),document.getElementById("b2"),document.getElementById("b3"),document.getElementById("b4")],
-    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")]
-  };
-
   function setStatus(msg){ els.status.textContent = msg; }
   function setError(msg){ els.error.textContent = msg || ""; }
+
   function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
 
   function escHtml(s){
@@ -318,6 +339,8 @@
 
     const props = Array.from(availableProps[pset] || []).sort((a,b)=>a.localeCompare(b,"nb"));
     fillPropSelects(propSelects, props);
+    // Rebuild markups (tekst) basert på nye valg
+    refreshFromPicked();
   }
 
   function getConfig(){
@@ -352,7 +375,7 @@
     return undefined;
   }
 
-  function buildLabelText(config, objProps){
+  function buildFullText(config, objProps){
     const lines = [];
     for (const block of config){
       const hasPset = (objProps.properties || []).some(x => psetNameOf(x) === block.pset);
@@ -374,11 +397,63 @@
     return lines.join("\n");
   }
 
-  // ===========================
-  // INGEN dynamikk ved zooming:
-  // ===========================
-  function buildDynamicLabel(fullText){
-    return String(fullText || "");
+  // Kompakt tekst: maks 1-2 linjer per Pset og max 4 linjer totalt (reduser overlapp når zoomet ut)
+  function buildCompactText(config, objProps){
+    const lines = [];
+    for (const block of config){
+      const hasPset = (objProps.properties || []).some(x => psetNameOf(x) === block.pset);
+      if (!hasPset) continue;
+
+      let firstLine = null;
+      for (const prop of block.props){
+        const v = findValue(objProps, block.pset, prop);
+        const vs = norm(v);
+        if (vs){
+          firstLine = `${prop}: ${vs}`;
+          break;
+        }
+      }
+      if (firstLine){
+        lines.push(block.pset);
+        lines.push(firstLine);
+      }
+    }
+    return lines.slice(0, 4).join("\n");
+  }
+
+  // === Kamera distanse (hvis støttet) ===
+  async function getCameraDistanceMeters(){
+    try{
+      if (!API?.viewer?.getCamera) return null;
+      const cam = await API.viewer.getCamera();
+      if (!cam) return null;
+
+      const pos = cam.position || cam.eye || cam.cameraPosition;
+      const tgt = cam.target || cam.lookAt || cam.cameraTarget;
+      if (!pos || !tgt) return null;
+
+      const dx = (pos.x - tgt.x);
+      const dy = (pos.y - tgt.y);
+      const dz = (pos.z - tgt.z);
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      return Number.isFinite(dist) ? dist : null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function wantCompact(distanceMeters){
+    if (!els.autoCompact.checked) return false;
+    const thr = Number(els.compactThreshold.value || 120);
+    if (!distanceMeters || !Number.isFinite(distanceMeters)) return true; // fallback: kompakt for å redusere overlapp
+    return distanceMeters > thr;
+  }
+
+  function scheduleRebuildMarkupsOnly(){
+    if (camDebounce) clearTimeout(camDebounce);
+    camDebounce = setTimeout(async () => {
+      await rebuildMarkupsOnly();
+    }, 220);
   }
 
   async function clearMarkups(){
@@ -394,7 +469,20 @@
     }
   }
 
-  async function addTextMarkupOverObject(modelId, runtimeId, text){
+  // Spred labels litt for å redusere overlapp
+  function staggerOffsetMm(index){
+    const step = 140; // mm
+    const side = 120; // mm
+    const row = index % 6;
+    const col = Math.floor(index / 6) % 2;
+    return {
+      dy: row * step,
+      dx: (col === 0 ? -side : side) * (row % 2 ? 1 : -1),
+      dz: 0
+    };
+  }
+
+  async function addTextMarkupOverObject(modelId, runtimeId, text, indexForStagger){
     if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
 
     const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
@@ -407,8 +495,20 @@
     const cz_mm = ((min.z + max.z) / 2) * 1000;
     const topY_mm = (max.y) * 1000;
 
-    const start = { positionX: cx_mm, positionY: topY_mm + 120, positionZ: cz_mm, modelId, objectId: runtimeId };
-    const end   = { positionX: cx_mm, positionY: topY_mm + 720, positionZ: cz_mm, modelId, objectId: runtimeId };
+    const st = staggerOffsetMm(indexForStagger || 0);
+
+    const start = {
+      positionX: cx_mm + st.dx,
+      positionY: topY_mm + 80 + st.dy,
+      positionZ: cz_mm + st.dz,
+      modelId, objectId: runtimeId
+    };
+    const end = {
+      positionX: cx_mm + st.dx,
+      positionY: topY_mm + 520 + st.dy,
+      positionZ: cz_mm + st.dz,
+      modelId, objectId: runtimeId
+    };
 
     const created = await API.markup.addTextMarkup([{
       start, end, text,
@@ -417,14 +517,6 @@
 
     if (created && created.length && typeof created[0].id === "number") return created[0].id;
     return null;
-  }
-
-  async function zoomTo(modelId, runtimeId){
-    const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
-    await withSelectionSuppressed(async () => {
-      try{ await API.viewer.setSelection(selector, "replace"); }catch{}
-      try{ await API.viewer.setCamera(selector, { animationTime: 650 }); }catch{}
-    }, 250);
   }
 
   function selectionToSnapshot(sel){
@@ -473,12 +565,50 @@
     }
   }
 
+  async function rebuildMarkupsOnly(){
+    if (!picked.size){
+      await clearMarkups();
+      updateButtonsAndTableEmpty();
+      return;
+    }
+
+    const myRun = ++refreshRunId;
+    try{
+      const dist = await getCameraDistanceMeters();
+      const compact = wantCompact(dist);
+
+      await clearMarkups();
+      if (myRun !== refreshRunId) return;
+
+      let idx = 0;
+      let made = 0;
+
+      for (const it of picked.values()){
+        if (myRun !== refreshRunId) return;
+
+        const text = compact ? (it.compactText || it.fullText || "") : (it.fullText || "");
+        if (!norm(text)) continue;
+
+        const mid = await addTextMarkupOverObject(it.modelId, Number(it.runtimeId), text, idx++);
+        if (mid != null){ lastMarkupIds.push(mid); made++; }
+      }
+
+      els.clearBtn.disabled = !lastMarkupIds.length;
+      setStatus(compact
+        ? `Kompakt visning (zoom ut). Påskrifter: ${made}.`
+        : `Full visning (zoom inn). Påskrifter: ${made}.`
+      );
+    }catch(e){
+      console.error(e);
+      setError("Klarte ikke å bygge om påskrifter: " + (e.message || e));
+    }
+  }
+
   async function refreshFromPicked(){
     const myRun = ++refreshRunId;
 
     try{
       setError("");
-
       const config = getConfig();
       if (!config.length){
         setStatus("Velg minst ett Property Set og minst én property. Deretter klikk objekter i 3D.");
@@ -494,13 +624,6 @@
 
       setStatus(`Oppdaterer ${picked.size} objekter…`);
 
-      await clearMarkups();
-      if (myRun !== refreshRunId) return;
-
-      const rows = [];
-      let idx = 1;
-      let made = 0;
-
       const perModel = new Map();
       for (const it of picked.values()){
         if (!perModel.has(it.modelId)) perModel.set(it.modelId, []);
@@ -514,66 +637,60 @@
         if (myRun !== refreshRunId) return;
 
         for (let i=0;i<rids.length;i++){
-          if (myRun !== refreshRunId) return;
-
           const rid = rids[i];
           const objProps = propsArr?.[i];
           if (!objProps) continue;
           if (isIgnored(objProps)) continue;
 
-          const full = buildLabelText(config, objProps);
-          if (!norm(full)) continue;
-
-          // Ingen dynamikk:
-          const shown = buildDynamicLabel(full);
-
-          const guid = await getIfcGuid(modelId, rid);
-          if (myRun !== refreshRunId) return;
-
           const name = guessObjectName(objProps);
+          const guid = await getIfcGuid(modelId, rid);
 
-          const mid = await addTextMarkupOverObject(modelId, rid, shown);
-          if (myRun !== refreshRunId) return;
-
-          if (mid != null){ lastMarkupIds.push(mid); made++; }
+          const fullText = buildFullText(config, objProps);
+          const compactText = buildCompactText(config, objProps);
 
           const key = `${modelId}:${rid}`;
           const store = picked.get(key);
           if (store){
             store.name = name;
             store.guid = guid;
-            store.labelText = full;
+            store.fullText = fullText;
+            store.compactText = compactText;
           }
-
-          rows.push(`
-            <tr class="clickable" data-m="${escHtml(modelId)}" data-r="${escHtml(rid)}">
-              <td>${idx++}</td>
-              <td>${escHtml(name)}</td>
-              <td class="mono">${escHtml(guid)}</td>
-              <td style="white-space:pre-wrap;">${escHtml(full)}</td>
-            </tr>
-          `);
         }
       }
 
       if (myRun !== refreshRunId) return;
 
-      els.countInfo.textContent = String(picked.size);
+      const rows = [];
+      let idx = 1;
+      for (const it of picked.values()){
+        rows.push(`
+          <tr class="clickable" data-m="${escHtml(it.modelId)}" data-r="${escHtml(it.runtimeId)}">
+            <td>${idx++}</td>
+            <td>${escHtml(it.name || "")}</td>
+            <td class="mono">${escHtml(it.guid || "")}</td>
+            <td style="white-space:pre-wrap;">${escHtml(it.fullText || "")}</td>
+          </tr>
+        `);
+      }
       els.tbody.innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Ingen påskrift ble laget (mangler verdier / filtrert bort).</td></tr>`;
+      els.countInfo.textContent = String(picked.size);
 
       els.tbody.querySelectorAll("tr.clickable").forEach(tr => {
         tr.addEventListener("click", async () => {
           const modelId = tr.getAttribute("data-m");
           const rid = tr.getAttribute("data-r");
-          await zoomTo(modelId, rid);
+          await withSelectionSuppressed(async () => {
+            try{ await API.viewer.setSelection({ modelObjectIds: [{ modelId, objectRuntimeIds: [Number(rid)] }] }, "replace"); }catch{}
+            try{ await API.viewer.setCamera({ modelObjectIds: [{ modelId, objectRuntimeIds: [Number(rid)] }] }, { animationTime: 650 }); }catch{}
+          }, 250);
         });
       });
 
-      els.clearBtn.disabled = !lastMarkupIds.length;
+      await rebuildMarkupsOnly();
+
       els.csvBtn.disabled = picked.size === 0;
       els.resetListBtn.disabled = picked.size === 0;
-
-      setStatus(`Ferdig. Laget ${made} påskrifter for ${picked.size} objekter.`);
     }catch(e){
       console.error(e);
       if (myRun === refreshRunId){
@@ -602,6 +719,7 @@
     }
     if (!keys.length) return;
 
+    // Ett objekt: toggle i listen
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -609,13 +727,12 @@
         const [modelId, runtimeId] = key.split(":");
         picked.set(key, { modelId, runtimeId });
       }
-
       await syncViewerSelectionFromPicked();
       await refreshFromPicked();
       return;
     }
 
-    // Hvis bruker markerer flere samtidig (Ctrl/Shift), erstatt med akkurat det utvalget:
+    // Multi: sett listen lik selection (Ctrl/Shift)
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -688,7 +805,7 @@
     const config = getConfig();
     const configText = config.map(b => `${b.pset} -> ${b.props.join(", ")}`).join(" | ");
 
-    const header = ["#", "ModelId", "RuntimeId", "ObjectName", "IfcGlobalId", "Config", "LabelText"];
+    const header = ["#", "ModelId", "RuntimeId", "ObjectName", "IfcGlobalId", "Config", "LabelTextFull", "LabelTextCompact"];
     const rows = [header.join(";")];
 
     let i = 1;
@@ -700,7 +817,8 @@
         it.name || "",
         it.guid || "",
         configText,
-        (it.labelText || "").replace(/\r?\n/g, "\\n")
+        (it.fullText || "").replace(/\r?\n/g, "\\n"),
+        (it.compactText || "").replace(/\r?\n/g, "\\n")
       ].map(escapeCSV).join(";"));
     }
 
@@ -723,33 +841,32 @@
 
   async function resetPickedList(){
     setError("");
-
-    // STOP pågående refresh
     refreshRunId++;
-
-    // Lås selection-events
     lockSelectionFor(1200);
 
-    // Fjern markups + data
     await clearMarkups();
     picked.clear();
     updateButtonsAndTableEmpty();
 
-    // Nullstill snapshots
     lastSelectionSnapshot = "";
     lastProgrammaticSnapshot = "";
 
-    // Sett selection tomt i viewer
     await setViewerSelectionSafe([], 900);
-
     setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
   }
 
   function onWorkspaceEvent(event, payload){
     const ev = (event || "").toLowerCase();
+
     if (ev.includes("selection")){
       const sel = (payload && payload.data) ? payload.data : [];
       handleSelectionChanged(sel);
+      return;
+    }
+
+    // Kamera-endringer: ikke alle workspaces sender dette, men støttes i noen.
+    if (ev.includes("camera")){
+      scheduleRebuildMarkupsOnly();
       return;
     }
   }
@@ -758,35 +875,39 @@
     try{
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
 
-      if (!API?.markup?.addTextMarkup){
-        setStatus("Tilkoblet (men MarkupAPI mangler – 3D-tekst støttes ikke i denne workspacen).");
-      } else {
-        setStatus("Tilkoblet. Trykk «Oppdater liste» for å hente Pset/properties.");
-      }
       els.scanBtn.disabled = false;
-      els.clearBtn.disabled = true;
-      els.csvBtn.disabled = true;
-      els.resetListBtn.disabled = true;
+      els.clearBtn.disabled = false; // kan brukes selv om det ikke finnes markups
+      setStatus("✅ Tilkoblet. Trykk «Oppdater liste» for å fylle Pset/Property.");
 
+      // Event fallback: poll kamera av og til for komprimering (siden camera-event kan mangle)
+      setInterval(async () => {
+        if (!els.autoCompact.checked) return;
+        if (!picked.size) return;
+        scheduleRebuildMarkupsOnly();
+      }, 1200);
     }catch(e){
       console.error(e);
       setError("Kunne ikke koble til Trimble Connect: " + (e.message || e));
-      setStatus("Feil ved tilkobling.");
+      setStatus("❌ Feil ved tilkobling.");
     }
   }
 
+  // UI wiring
   els.scanBtn.addEventListener("click", scanPsets);
-  els.clearBtn.addEventListener("click", async () => { await clearMarkups(); setStatus("Påskrift fjernet."); });
   els.csvBtn.addEventListener("click", exportCSV);
   els.resetListBtn.addEventListener("click", resetPickedList);
+  els.clearBtn.addEventListener("click", async () => {
+    await clearMarkups();
+    setStatus("🧹 Påskrift fjernet (listen beholdes).");
+  });
 
   els.psetA.addEventListener("change", () => onPsetChanged(els.psetA, els.a));
   els.psetB.addEventListener("change", () => onPsetChanged(els.psetB, els.b));
   els.psetC.addEventListener("change", () => onPsetChanged(els.psetC, els.c));
 
-  [...els.a, ...els.b, ...els.c, els.psetA, els.psetB, els.psetC].forEach(el => {
-    el.addEventListener("change", () => { if (picked.size) refreshFromPicked(); });
-  });
+  [...els.a, ...els.b, ...els.c].forEach(sel => sel.addEventListener("change", refreshFromPicked));
+  els.autoCompact.addEventListener("change", scheduleRebuildMarkupsOnly);
+  els.compactThreshold.addEventListener("change", scheduleRebuildMarkupsOnly);
 
   connect();
 </script>
