@@ -4,235 +4,587 @@
   <meta charset="UTF-8" />
   <title>MultiProperty Påskrift</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
   <style>
-    body{
-      margin:0;
-      font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-      background:#f5f7fa;
+    :root{
+      --primary:#0069d9; --danger:#e74c3c; --success:#28a745;
+      --border:#e5e7eb; --bg:#f5f7fa; --card:#fff; --muted:#6b7280;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     }
+    body{margin:0;background:var(--bg);color:#111827;min-height:100vh;display:flex;flex-direction:column;}
     header{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      padding:12px 16px;
-      background:#fff;
-      border-bottom:1px solid #e5e7eb;
+      display:flex;align-items:center;gap:14px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--border);
     }
-    header img{
-      width:96px;
-      height:96px;
-      object-fit:contain;
+    .logoWrap{
+      width:92px;height:92px;border:1px solid #eee;border-radius:12px;background:#fff;
+      display:flex;align-items:center;justify-content:center;overflow:hidden;
+      box-shadow:0 1px 3px rgba(15,23,42,.08);
+      flex:0 0 auto;
     }
-    h1{font-size:18px;margin:0;color:#0069d9}
-    .sub{font-size:12px;opacity:.7}
+    .logoWrap img{width:84px;height:84px;object-fit:contain;display:block;}
+    .titleBlock{display:flex;flex-direction:column;gap:2px;}
+    .title{font-weight:900;font-size:18px;color:var(--primary);line-height:1.1;}
+    .sub{font-size:12px;color:var(--muted);}
+    .status{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;}
 
-    main{padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    main{
+      padding:12px;display:grid;gap:12px;grid-template-columns:1fr;
+    }
+    @media (min-width: 1100px){ main{grid-template-columns: 1.1fr .9fr; align-items:start;} }
+
     .card{
-      background:#fff;
-      border-radius:10px;
-      padding:12px;
-      box-shadow:0 1px 3px rgba(0,0,0,.08);
+      background:var(--card);border:1px solid rgba(229,231,235,.7);border-radius:14px;
+      box-shadow:0 1px 3px rgba(15,23,42,.06);padding:12px;
     }
-    label{font-weight:600;font-size:13px}
-    select,button{
-      width:100%;
-      padding:8px;
-      margin-top:4px;
-      border-radius:8px;
-      border:1px solid #d1d5db;
-    }
-    button{
-      background:#0069d9;
-      color:#fff;
-      font-weight:700;
-      cursor:pointer;
-    }
-    button.danger{background:#e74c3c}
 
-    table{width:100%;border-collapse:collapse;font-size:12px}
-    th,td{padding:6px;border-bottom:1px solid #eee}
-    tr.click:hover td{background:#eef6ff;cursor:pointer}
-    .mono{font-family:ui-monospace,monospace}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .row.space{justify-content:space-between;}
+    .muted{color:var(--muted);font-size:12px;}
+    #error{color:#b91c1c;font-size:12px;white-space:pre-wrap;margin-top:8px;min-height:14px;}
+
+    .grid3{display:grid;gap:10px;grid-template-columns:1fr;}
+    @media (min-width: 720px) and (max-width: 1099px){ .grid3{grid-template-columns:1fr 1fr 1fr;} }
+
+    .psetBox{
+      background:#fafafa;border:1px solid #eef2f7;border-radius:12px;padding:10px;
+    }
+    .psetHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+    .psetHead b{font-size:13px;}
+    .tag{font-size:11px;color:var(--muted);background:#fff;border:1px solid #e5e7eb;padding:4px 8px;border-radius:999px;}
+
+    label{font-weight:800;font-size:12px;display:block;margin-top:8px;}
+    select,button{
+      width:100%;padding:9px 10px;border-radius:10px;border:1px solid #d1d5db;background:#fff;font-size:13px;
+    }
+    select:disabled{background:#f3f4f6;color:#9ca3af;}
+    button{border:none;color:#fff;font-weight:900;cursor:pointer;}
+    #scanBtn{background:var(--success);}
+    #clearBtn{background:var(--danger);}
+
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top;}
+    th{background:#f8fafc;position:sticky;top:0;z-index:1;}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;}
+    tr.clickable{cursor:pointer;}
+    tr.clickable:hover td{background:#eef6ff;}
+    .scroll{max-height:560px;overflow:auto;border:1px solid #eef2f7;border-radius:12px;margin-top:10px;}
   </style>
 </head>
 
 <body>
 <header>
-  <img src="norconsult-logo-black.png" onerror="this.style.display='none'">
-  <div>
-    <h1>MultiProperty Påskrift</h1>
-    <div class="sub">Klikk objekter i modellen → påskrift vises automatisk</div>
+  <div class="logoWrap">
+    <img src="norconsult-logo-black.png"
+         alt="Norconsult"
+         onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
+  <div class="titleBlock">
+    <div class="title">MultiProperty Påskrift</div>
+    <div class="sub">Velg Pset + properties → klikk objekter i 3D → påskrift vises automatisk</div>
+  </div>
+  <div class="status" id="status">Kobler til Trimble Connect…</div>
 </header>
 
 <main>
-  <!-- CONFIG -->
+  <!-- VENSTRE: valg -->
   <div class="card">
-    <label>Property Set A</label>
-    <select id="psetA"></select>
-    <select id="a1"></select>
-    <select id="a2"></select>
-    <select id="a3"></select>
-    <select id="a4"></select>
+    <div class="row space">
+      <div class="muted">Filtrerer bort: <b>IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY</b></div>
+      <div class="row" style="gap:8px;">
+        <button id="scanBtn" disabled style="width:auto;padding:10px 12px;">🔄 Oppdater liste</button>
+        <button id="clearBtn" disabled style="width:auto;padding:10px 12px;">🧹 Fjern påskrift</button>
+      </div>
+    </div>
+    <div id="error"></div>
 
-    <hr>
+    <div class="grid3" style="margin-top:10px;">
+      <div class="psetBox">
+        <div class="psetHead"><b>Pset A</b><span class="tag">opptil 4 properties</span></div>
+        <label>Property Set</label>
+        <select id="psetA" disabled><option value="">(velg…)</option></select>
+        <label>Property 1</label><select id="a1" disabled><option value="">(velg…)</option></select>
+        <label>Property 2</label><select id="a2" disabled><option value="">(velg…)</option></select>
+        <label>Property 3</label><select id="a3" disabled><option value="">(velg…)</option></select>
+        <label>Property 4</label><select id="a4" disabled><option value="">(velg…)</option></select>
+      </div>
 
-    <label>Property Set B</label>
-    <select id="psetB"></select>
-    <select id="b1"></select>
-    <select id="b2"></select>
+      <div class="psetBox">
+        <div class="psetHead"><b>Pset B</b><span class="tag">opptil 4 properties</span></div>
+        <label>Property Set</label>
+        <select id="psetB" disabled><option value="">(velg…)</option></select>
+        <label>Property 1</label><select id="b1" disabled><option value="">(velg…)</option></select>
+        <label>Property 2</label><select id="b2" disabled><option value="">(velg…)</option></select>
+        <label>Property 3</label><select id="b3" disabled><option value="">(velg…)</option></select>
+        <label>Property 4</label><select id="b4" disabled><option value="">(velg…)</option></select>
+      </div>
 
-    <hr>
+      <div class="psetBox">
+        <div class="psetHead"><b>Pset C</b><span class="tag">opptil 4 properties</span></div>
+        <label>Property Set</label>
+        <select id="psetC" disabled><option value="">(velg…)</option></select>
+        <label>Property 1</label><select id="c1" disabled><option value="">(velg…)</option></select>
+        <label>Property 2</label><select id="c2" disabled><option value="">(velg…)</option></select>
+        <label>Property 3</label><select id="c3" disabled><option value="">(velg…)</option></select>
+        <label>Property 4</label><select id="c4" disabled><option value="">(velg…)</option></select>
+      </div>
+    </div>
 
-    <label>Property Set C</label>
-    <select id="psetC"></select>
-    <select id="c1"></select>
-
-    <button id="clearBtn" class="danger">Fjern påskrift</button>
+    <div class="muted" style="margin-top:10px;line-height:1.5;">
+      Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
+      Du kan multi-selecte objekter (Ctrl/Shift) og påskrift oppdateres automatisk.
+    </div>
   </div>
 
-  <!-- TABLE -->
+  <!-- HØYRE: tabell -->
   <div class="card">
-    <b>Valgte objekter</b>
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Objektnavn</th>
-          <th>GUID</th>
-        </tr>
-      </thead>
-      <tbody id="tbody">
-        <tr><td colspan="3">Ingen valgt</td></tr>
-      </tbody>
-    </table>
+    <div class="row space">
+      <b>Valgte objekter</b>
+      <span class="muted" id="countInfo">Ingen valgt</span>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:52px;">#</th>
+            <th style="width:210px;">Objektnavn</th>
+            <th style="width:240px;">IfcGlobalId (GUID)</th>
+            <th>Påskrift</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="4" class="muted">Klikk objekter i modellen.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </main>
 
 <script>
-let API;
-let lastMarkupIds=[];
+  let API = null;
+  let availableProps = {}; // { psetName: Set(props) }
+  let lastMarkupIds = [];
+  const ifcGuidCache = new Map();
 
-const IGNORE=new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
+  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
-function norm(v){return (v??"").toString().trim();}
-function isIgnored(obj){
-  const t=(obj.ifcType||"").toUpperCase();
-  return IGNORE.has(t);
-}
+  const els = {
+    status: document.getElementById("status"),
+    error: document.getElementById("error"),
+    scanBtn: document.getElementById("scanBtn"),
+    clearBtn: document.getElementById("clearBtn"),
+    countInfo: document.getElementById("countInfo"),
+    tbody: document.getElementById("tbody"),
 
-async function connect(){
-  API=await TrimbleConnectWorkspace.connect(window.parent,onEvent,30000);
-  scanPsets();
-}
+    psetA: document.getElementById("psetA"),
+    psetB: document.getElementById("psetB"),
+    psetC: document.getElementById("psetC"),
 
-function onEvent(event,payload){
-  if(event.includes("selection")){
-    handleSelection(payload.data||[]);
+    a: [document.getElementById("a1"),document.getElementById("a2"),document.getElementById("a3"),document.getElementById("a4")],
+    b: [document.getElementById("b1"),document.getElementById("b2"),document.getElementById("b3"),document.getElementById("b4")],
+    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")]
+  };
+
+  function setStatus(msg){ els.status.textContent = msg; }
+  function setError(msg){ els.error.textContent = msg || ""; }
+  function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
+  function escHtml(s){
+    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
   }
-}
 
-async function scanPsets(){
-  const models=await API.viewer.getObjects();
-  const map={};
-  for(const m of models){
-    const ids=m.objects.map(o=>o.id);
-    const props=await API.viewer.getObjectProperties(m.modelId,ids);
-    for(const o of props){
-      if(isIgnored(o))continue;
-      for(const ps of o.properties||[]){
-        map[ps.name]=map[ps.name]||new Set();
-        ps.properties.forEach(p=>map[ps.name].add(p.name));
+  function psetNameOf(ps){ return norm(ps?.name || ps?.set || ""); }
+
+  function getIfcType(objProps){
+    // Robust: prøv flere felter/psets hvis tilgjengelig
+    const direct = norm(objProps?.ifcType || objProps?.ifcEntity || objProps?.entityType || objProps?.type);
+    if (direct) return direct.toUpperCase();
+    return "";
+  }
+
+  function isIgnored(objProps){
+    const t = getIfcType(objProps);
+    if (t && IGNORE_TYPES.has(t)) return true;
+    // fallback: se etter type i tekstfelt
+    const n = norm(objProps?.name || objProps?.objectName).toUpperCase();
+    for (const it of IGNORE_TYPES){
+      if (n === it || n.includes(it)) return true;
+    }
+    return false;
+  }
+
+  function guessObjectName(objProps){
+    const direct = norm(objProps?.name || objProps?.objectName || objProps?.displayName);
+    if (direct) return direct;
+
+    // fallback: let i props
+    for (const ps of (objProps?.properties || [])){
+      for (const p of (ps.properties || [])){
+        const pn = norm(p.name).toLowerCase();
+        if (pn === "objektnavn" || pn.includes("objektnavn") || pn === "name"){
+          const v = norm(p.value);
+          if (v) return v;
+        }
       }
     }
+    return "";
   }
-  fill("psetA",map);fill("psetB",map);fill("psetC",map);
-}
 
-function fill(id,map){
-  const s=document.getElementById(id);
-  s.innerHTML="<option></option>";
-  Object.keys(map).sort().forEach(n=>{
-    s.innerHTML+=`<option>${n}</option>`;
-  });
-  s.onchange=()=>fillProps(id,map[s.value]||[]);
-}
+  async function getIfcGuid(modelId, runtimeId){
+    const key = `${modelId}:${runtimeId}`;
+    if (ifcGuidCache.has(key)) return ifcGuidCache.get(key);
 
-function fillProps(prefix,props){
-  ["1","2","3","4"].forEach(i=>{
-    const s=document.getElementById(prefix[4]+i);
-    if(!s)return;
-    s.innerHTML="<option></option>";
-    props.forEach(p=>s.innerHTML+=`<option>${p}</option>`);
-  });
-}
+    let v = "";
+    try{
+      const ids = await API.viewer.convertToObjectIds(modelId, [Number(runtimeId)]);
+      v = (ids && ids[0]) ? String(ids[0]) : "";
+    }catch(e){ v=""; }
 
-async function handleSelection(sel){
-  await clearMarkups();
-  const rows=[];
-  let i=1;
+    ifcGuidCache.set(key, v);
+    return v;
+  }
 
-  for(const s of sel){
-    const modelId=s.modelId;
-    for(const rid of s.objectRuntimeIds){
-      const [o]=await API.viewer.getObjectProperties(modelId,[rid]);
-      if(isIgnored(o))continue;
-
-      const text=[];
-      [["psetA","a"],["psetB","b"],["psetC","c"]].forEach(([ps,pf])=>{
-        const pset=document.getElementById(ps).value;
-        if(!pset)return;
-        const p=o.properties.find(x=>x.name===pset);
-        if(!p)return;
-        ["1","2","3","4"].forEach(n=>{
-          const prop=document.getElementById(pf+n)?.value;
-          if(!prop)return;
-          const pv=p.properties.find(x=>x.name===prop)?.value;
-          if(pv)text.push(`${prop}: ${pv}`);
-        });
-      });
-      if(!text.length)continue;
-
-      const id=await addText(modelId,rid,text.join("\n"));
-      if(id)lastMarkupIds.push(id);
-
-      const guid=(await API.viewer.convertToObjectIds(modelId,[rid]))[0];
-      rows.push(`<tr class="click" data-m="${modelId}" data-r="${rid}">
-        <td>${i++}</td><td>${o.name||""}</td><td class="mono">${guid}</td></tr>`);
+  function resetPropSelects(list){
+    for (const sel of list){
+      sel.innerHTML = '<option value="">(velg…)</option>';
+      sel.disabled = true;
     }
   }
 
-  document.getElementById("tbody").innerHTML=rows.join("")||"<tr><td colspan=3>Ingen data</td></tr>";
-  document.querySelectorAll("tr.click").forEach(tr=>{
-    tr.onclick=()=>API.viewer.setSelection({
-      modelObjectIds:[{modelId:tr.dataset.m,objectRuntimeIds:[+tr.dataset.r]}]
-    });
-  });
-}
-
-async function addText(modelId,rid,text){
-  const [b]=await API.viewer.getObjectBoundingBoxes(modelId,[rid]);
-  if(!b)return null;
-  const c=b.boundingBox;
-  return (await API.markup.addTextMarkup([{
-    start:{positionX:(c.min.x+c.max.x)/2*1000,positionY:c.max.y*1000+100,positionZ:(c.min.z+c.max.z)/2*1000,modelId,objectId:rid},
-    end:{positionX:(c.min.x+c.max.x)/2*1000,positionY:c.max.y*1000+600,positionZ:(c.min.z+c.max.z)/2*1000,modelId,objectId:rid},
-    text, color:{r:0,g:0,b:204,a:255}
-  }]))[0]?.id;
-}
-
-async function clearMarkups(){
-  if(lastMarkupIds.length){
-    await API.markup.removeMarkups(lastMarkupIds);
-    lastMarkupIds=[];
+  function fillPsetSelect(sel, psetNames){
+    sel.innerHTML = '<option value="">(velg…)</option>';
+    for (const n of psetNames){
+      const opt = document.createElement("option");
+      opt.value = n;
+      opt.textContent = n;
+      sel.appendChild(opt);
+    }
+    sel.disabled = false;
   }
-}
-document.getElementById("clearBtn").onclick=clearMarkups;
 
-connect();
+  function fillPropSelects(propSelects, props){
+    for (const sel of propSelects){
+      sel.innerHTML = '<option value="">(velg…)</option>';
+      for (const p of props){
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        sel.appendChild(opt);
+      }
+      sel.disabled = false;
+    }
+  }
+
+  function onPsetChanged(psetSel, propSelects){
+    resetPropSelects(propSelects);
+    const pset = norm(psetSel.value);
+    if (!pset) return;
+
+    const props = Array.from(availableProps[pset] || []).sort((a,b)=>a.localeCompare(b,"nb"));
+    fillPropSelects(propSelects, props);
+  }
+
+  function getConfig(){
+    const blocks = [
+      { key:"A", pset: norm(els.psetA.value), props: els.a.map(s => norm(s.value)).filter(Boolean) },
+      { key:"B", pset: norm(els.psetB.value), props: els.b.map(s => norm(s.value)).filter(Boolean) },
+      { key:"C", pset: norm(els.psetC.value), props: els.c.map(s => norm(s.value)).filter(Boolean) }
+    ];
+
+    // dedup props per blokk (behold rekkefølge)
+    const out = [];
+    for (const b of blocks){
+      if (!b.pset || !b.props.length) continue;
+      const seen = new Set();
+      const props = [];
+      for (const p of b.props){
+        if (seen.has(p)) continue;
+        seen.add(p);
+        props.push(p);
+      }
+      out.push({ key: b.key, pset: b.pset, props });
+    }
+    return out;
+  }
+
+  function findValue(objProps, psetName, propName){
+    for (const ps of (objProps?.properties || [])){
+      if (psetNameOf(ps) !== psetName) continue;
+      for (const p of (ps.properties || [])){
+        if (norm(p.name) === propName) return p.value;
+      }
+    }
+    return undefined;
+  }
+
+  function buildLabelText(config, objProps){
+    const lines = [];
+    for (const block of config){
+      // Finn pset på objektet
+      const ps = (objProps.properties || []).find(x => psetNameOf(x) === block.pset);
+      if (!ps) continue;
+
+      const chunk = [];
+      for (const prop of block.props){
+        const v = findValue(objProps, block.pset, prop);
+        const vs = norm(v);
+        if (vs) chunk.push(`${prop}: ${vs}`);
+      }
+      if (chunk.length){
+        lines.push(block.pset);
+        lines.push(...chunk);
+        lines.push("");
+      }
+    }
+    while (lines.length && norm(lines[lines.length-1]) === "") lines.pop();
+    return lines.join("\n");
+  }
+
+  async function clearMarkups(){
+    try{
+      if (API?.markup?.removeMarkups && lastMarkupIds.length){
+        await API.markup.removeMarkups(lastMarkupIds.slice());
+      }
+    }catch(e){
+      console.warn("removeMarkups feilet:", e);
+    }finally{
+      lastMarkupIds = [];
+      els.clearBtn.disabled = true;
+    }
+  }
+
+  async function addTextMarkupOverObject(modelId, runtimeId, text){
+    if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
+
+    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
+    if (!boxes || !boxes.length || !boxes[0]?.boundingBox) return null;
+
+    const bb = boxes[0].boundingBox;
+    const min = bb.min, max = bb.max;
+
+    const cx_mm = ((min.x + max.x) / 2) * 1000;
+    const cz_mm = ((min.z + max.z) / 2) * 1000;
+    const topY_mm = (max.y) * 1000;
+
+    // Rett over objektet (ikke til siden)
+    const start = { positionX: cx_mm, positionY: topY_mm + 100, positionZ: cz_mm, modelId, objectId: runtimeId };
+    const end   = { positionX: cx_mm, positionY: topY_mm + 650, positionZ: cz_mm, modelId, objectId: runtimeId };
+
+    const created = await API.markup.addTextMarkup([{
+      start, end, text,
+      color: { r: 0, g: 0, b: 204, a: 255 }
+    }]);
+
+    if (created && created.length && typeof created[0].id === "number") return created[0].id;
+    return null;
+  }
+
+  async function zoomTo(modelId, runtimeId){
+    const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
+    try{ await API.viewer.setSelection(selector, "replace"); } catch {}
+    try{
+      await API.viewer.setCamera(selector, { animationTime: 650 });
+    } catch {
+      // fallback: kun selection
+    }
+  }
+
+  async function handleSelectionChanged(selection){
+    setError("");
+
+    const config = getConfig();
+    if (!config.length){
+      // Ikke spam: bare vis status
+      setStatus("Velg minst ett Property Set og minst én property. Deretter klikk objekter i 3D.");
+      return;
+    }
+
+    // selection = [{modelId, objectRuntimeIds:[]}, ...]
+    let total = 0;
+    for (const s of selection) total += (s.objectRuntimeIds || []).length;
+
+    if (!total){
+      els.countInfo.textContent = "Ingen valgt";
+      els.tbody.innerHTML = `<tr><td colspan="4" class="muted">Klikk objekter i modellen.</td></tr>`;
+      await clearMarkups();
+      setStatus("Ingen objekt valgt.");
+      return;
+    }
+
+    setStatus(`Leser ${total} valgte objekter…`);
+    await clearMarkups();
+
+    const rows = [];
+    let idx = 1;
+    let made = 0;
+
+    for (const s of selection){
+      const modelId = s.modelId;
+      const runtimeIds = s.objectRuntimeIds || [];
+
+      // Hent props i batch per modell
+      const propsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+      for (let i=0;i<runtimeIds.length;i++){
+        const rid = runtimeIds[i];
+        const objProps = propsArr?.[i];
+        if (!objProps) continue;
+        if (isIgnored(objProps)) continue;
+
+        const labelText = buildLabelText(config, objProps);
+        if (!norm(labelText)) continue;
+
+        const guid = await getIfcGuid(modelId, rid);
+        const name = guessObjectName(objProps);
+
+        const mid = await addTextMarkupOverObject(modelId, rid, labelText);
+        if (mid != null){
+          lastMarkupIds.push(mid);
+          made++;
+        }
+
+        rows.push(`
+          <tr class="clickable" data-m="${escHtml(modelId)}" data-r="${escHtml(rid)}">
+            <td>${idx++}</td>
+            <td>${escHtml(name)}</td>
+            <td class="mono">${escHtml(guid)}</td>
+            <td style="white-space:pre-wrap;">${escHtml(labelText)}</td>
+          </tr>
+        `);
+      }
+    }
+
+    els.countInfo.textContent = `Valgt: ${total} • Påskrift laget: ${made}`;
+    els.tbody.innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Ingen påskrift ble laget (mangler verdier / filtrert bort).</td></tr>`;
+
+    // row click -> zoom
+    els.tbody.querySelectorAll("tr.clickable").forEach(tr => {
+      tr.addEventListener("click", async () => {
+        const modelId = tr.getAttribute("data-m");
+        const rid = tr.getAttribute("data-r");
+        await zoomTo(modelId, rid);
+      });
+    });
+
+    if (lastMarkupIds.length) els.clearBtn.disabled = false;
+
+    setStatus(`Ferdig. Laget ${made} påskrifter. (Husk Markups/Annotations i viewer)`);
+  }
+
+  async function scanPsets(){
+    try{
+      setError("");
+      setStatus("Skanner modell for Property Sets…");
+
+      availableProps = {};
+      resetPropSelects(els.a); resetPropSelects(els.b); resetPropSelects(els.c);
+      [els.psetA, els.psetB, els.psetC].forEach(s => {
+        s.innerHTML = '<option value="">(velg…)</option>';
+        s.disabled = true;
+      });
+
+      const models = await API.viewer.getObjects();
+      if (!models || !models.length){
+        setStatus("Fant ingen modeller/objekter i viewer.");
+        return;
+      }
+
+      // Skann en del objekter per modell (for å få psets/properties)
+      for (const m of models){
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
+
+        // Begrens skann for ytelse
+        const ids = objs.slice(0, 1200).map(o => o.id);
+        const propsArr = await API.viewer.getObjectProperties(modelId, ids);
+
+        for (const objProps of (propsArr || [])){
+          if (!objProps) continue;
+          if (isIgnored(objProps)) continue;
+
+          for (const ps of (objProps.properties || [])){
+            const psetName = psetNameOf(ps);
+            if (!psetName) continue;
+
+            if (!availableProps[psetName]) availableProps[psetName] = new Set();
+            for (const p of (ps.properties || [])){
+              const pn = norm(p.name);
+              if (pn) availableProps[psetName].add(pn);
+            }
+          }
+        }
+      }
+
+      const psetNames = Object.keys(availableProps).sort((a,b)=>a.localeCompare(b,"nb"));
+      if (!psetNames.length){
+        setStatus("Fant ingen Property Sets (etter filtrering).");
+        return;
+      }
+
+      fillPsetSelect(els.psetA, psetNames);
+      fillPsetSelect(els.psetB, psetNames);
+      fillPsetSelect(els.psetC, psetNames);
+
+      setStatus("Ferdig skannet. Velg Pset/properties og klikk objekter i 3D.");
+    } catch (e){
+      console.error(e);
+      setError("Skann-feil: " + (e.message || e));
+      setStatus("Kunne ikke skanne.");
+    }
+  }
+
+  function fillPsetSelect(sel, psetNames){
+    sel.innerHTML = '<option value="">(velg…)</option>';
+    for (const n of psetNames){
+      const opt = document.createElement("option");
+      opt.value = n;
+      opt.textContent = n;
+      sel.appendChild(opt);
+    }
+    sel.disabled = false;
+  }
+
+  // Workspace init
+  async function connect(){
+    try{
+      API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
+      console.log("API connected", API);
+
+      if (!API?.markup?.addTextMarkup){
+        setStatus("Tilkoblet (men MarkupAPI mangler – 3D-tekst støttes ikke i denne workspacen).");
+      } else {
+        setStatus("Tilkoblet. Trykk «Oppdater liste» for å hente Pset/properties.");
+      }
+
+      els.scanBtn.disabled = false;
+    } catch (e){
+      console.error(e);
+      setError("Kunne ikke koble til Trimble Connect: " + (e.message || e));
+      setStatus("Feil ved tilkobling.");
+    }
+  }
+
+  function onWorkspaceEvent(event, payload){
+    // TC kan sende ulike navn, derfor sjekk med includes
+    if ((event || "").toLowerCase().includes("selection")){
+      const sel = (payload && payload.data) ? payload.data : [];
+      handleSelectionChanged(sel);
+    }
+  }
+
+  // UI wiring
+  els.scanBtn.addEventListener("click", scanPsets);
+  els.clearBtn.addEventListener("click", async () => {
+    await clearMarkups();
+    setStatus("Påskrift fjernet.");
+  });
+
+  els.psetA.addEventListener("change", () => onPsetChanged(els.psetA, els.a));
+  els.psetB.addEventListener("change", () => onPsetChanged(els.psetB, els.b));
+  els.psetC.addEventListener("change", () => onPsetChanged(els.psetC, els.c));
+
+  connect();
 </script>
 </body>
 </html>
