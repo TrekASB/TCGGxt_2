@@ -134,7 +134,9 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst. <br>
-      Du kan også bruke Ctrl/Shift – vi synker da inn TC sitt utvalg, men vanlig klikk = toggle i vår liste.
+      Vanlig klikk = toggle i vår liste (vi synker selection tilbake til viewer). Ctrl/Shift kan brukes i TC også.
+      <br><br>
+      <b>Dynamikk:</b> Teksten blir automatisk “kortere” når du er langt unna (zoomet ut) for å unngå store tekstblokker.
     </div>
   </div>
 
@@ -152,7 +154,7 @@
             <th style="width:52px;">#</th>
             <th style="width:220px;">Objektnavn</th>
             <th style="width:240px;">IfcGlobalId (GUID)</th>
-            <th>Påskrift</th>
+            <th>Påskrift (full)</th>
           </tr>
         </thead>
         <tbody id="tbody">
@@ -169,9 +171,21 @@
   let lastMarkupIds = [];
   const ifcGuidCache = new Map();
 
+  // Valgte objekter
   const picked = new Map(); // key modelId:runtimeId -> { modelId, runtimeId, name, guid, labelText }
+
+  // Selection snapshot for å unngå loops
   let lastSelectionSnapshot = "";
 
+  // Abort / dedupe av async refresh (fikser "Tøm liste" bug)
+  let refreshRunId = 0;
+  let isRefreshing = false;
+
+  // Zoom-estimat
+  let lastCamDist = null;
+  let camDebounceT = null;
+
+  // IFC root/container filter
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
   const els = {
@@ -196,9 +210,13 @@
   function setStatus(msg){ els.status.textContent = msg; }
   function setError(msg){ els.error.textContent = msg || ""; }
   function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
+
   function escHtml(s){
-    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+    return String(s||"")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#039;");
   }
+
   function escapeCSV(value){
     if (value === null || value === undefined) return "";
     const str = String(value);
@@ -210,8 +228,7 @@
 
   function getIfcType(objProps){
     const direct = norm(objProps?.ifcType || objProps?.ifcEntity || objProps?.entityType || objProps?.type);
-    if (direct) return direct.toUpperCase();
-    return "";
+    return direct ? direct.toUpperCase() : "";
   }
 
   function isIgnored(objProps){
@@ -227,6 +244,7 @@
   function guessObjectName(objProps){
     const direct = norm(objProps?.name || objProps?.objectName || objProps?.displayName);
     if (direct) return direct;
+
     for (const ps of (objProps?.properties || [])){
       for (const p of (ps.properties || [])){
         const pn = norm(p.name).toLowerCase();
@@ -328,8 +346,8 @@
   function buildLabelText(config, objProps){
     const lines = [];
     for (const block of config){
-      const ps = (objProps.properties || []).find(x => psetNameOf(x) === block.pset);
-      if (!ps) continue;
+      const hasPset = (objProps.properties || []).some(x => psetNameOf(x) === block.pset);
+      if (!hasPset) continue;
 
       const chunk = [];
       for (const prop of block.props){
@@ -345,6 +363,36 @@
     }
     while (lines.length && norm(lines[lines.length-1]) === "") lines.pop();
     return lines.join("\n");
+  }
+
+  function clampLines(text, maxLines){
+    const lines = String(text || "").split(/\r?\n/);
+    if (lines.length <= maxLines) return text;
+    return lines.slice(0, maxLines).join("\n") + "\n…";
+  }
+
+  async function getCameraDistanceEstimate(){
+    try{
+      if (API?.viewer?.getCamera){
+        const cam = await API.viewer.getCamera();
+        const p = cam?.position, t = cam?.target;
+        if (p && t && typeof p.x === "number"){
+          const dx=p.x-t.x, dy=p.y-t.y, dz=p.z-t.z;
+          return Math.sqrt(dx*dx+dy*dy+dz*dz);
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  function buildDynamicLabel(fullText){
+    const base = String(fullText || "");
+    if (lastCamDist == null) return clampLines(base, 8);
+
+    if (lastCamDist > 250) return clampLines(base, 2);
+    if (lastCamDist > 120) return clampLines(base, 4);
+    if (lastCamDist > 60)  return clampLines(base, 6);
+    return clampLines(base, 10);
   }
 
   async function clearMarkups(){
@@ -369,12 +417,13 @@
     const bb = boxes[0].boundingBox;
     const min = bb.min, max = bb.max;
 
+    // Sentrum XZ + topp Y (samme metodikk som BIK-skriptet)
     const cx_mm = ((min.x + max.x) / 2) * 1000;
     const cz_mm = ((min.z + max.z) / 2) * 1000;
     const topY_mm = (max.y) * 1000;
 
-    const start = { positionX: cx_mm, positionY: topY_mm + 100, positionZ: cz_mm, modelId, objectId: runtimeId };
-    const end   = { positionX: cx_mm, positionY: topY_mm + 650, positionZ: cz_mm, modelId, objectId: runtimeId };
+    const start = { positionX: cx_mm, positionY: topY_mm + 120, positionZ: cz_mm, modelId, objectId: runtimeId };
+    const end   = { positionX: cx_mm, positionY: topY_mm + 720, positionZ: cz_mm, modelId, objectId: runtimeId };
 
     const created = await API.markup.addTextMarkup([{
       start, end, text,
@@ -424,89 +473,127 @@
     }
   }
 
+  // -------------------------------------------------------
+  // REFRESH (med abort-token) + dynamisk label (kort/lang)
+  // -------------------------------------------------------
   async function refreshFromPicked(){
-    setError("");
+    const myRun = ++refreshRunId;
+    isRefreshing = true;
 
-    const config = getConfig();
-    if (!config.length){
-      setStatus("Velg minst ett Property Set og minst én property. Deretter klikk objekter i 3D.");
-      return;
-    }
+    try{
+      setError("");
 
-    if (!picked.size){
-      await clearMarkups();
-      updateButtonsAndTableEmpty();
-      setStatus("Ingen objekt i listen.");
-      return;
-    }
+      lastCamDist = await getCameraDistanceEstimate();
+      if (myRun !== refreshRunId) return;
 
-    setStatus(`Oppdaterer ${picked.size} objekter…`);
-    await clearMarkups();
-
-    const rows = [];
-    let idx = 1;
-    let made = 0;
-
-    const perModel = new Map();
-    for (const it of picked.values()){
-      if (!perModel.has(it.modelId)) perModel.set(it.modelId, []);
-      perModel.get(it.modelId).push(Number(it.runtimeId));
-    }
-
-    for (const [modelId, rids] of perModel.entries()){
-      const propsArr = await API.viewer.getObjectProperties(modelId, rids);
-      for (let i=0;i<rids.length;i++){
-        const rid = rids[i];
-        const objProps = propsArr?.[i];
-        if (!objProps) continue;
-        if (isIgnored(objProps)) continue;
-
-        const labelText = buildLabelText(config, objProps);
-        if (!norm(labelText)) continue;
-
-        const guid = await getIfcGuid(modelId, rid);
-        const name = guessObjectName(objProps);
-
-        const mid = await addTextMarkupOverObject(modelId, rid, labelText);
-        if (mid != null){ lastMarkupIds.push(mid); made++; }
-
-        const key = `${modelId}:${rid}`;
-        const store = picked.get(key);
-        if (store){
-          store.name = name;
-          store.guid = guid;
-          store.labelText = labelText;
-        }
-
-        rows.push(`
-          <tr class="clickable" data-m="${escHtml(modelId)}" data-r="${escHtml(rid)}">
-            <td>${idx++}</td>
-            <td>${escHtml(name)}</td>
-            <td class="mono">${escHtml(guid)}</td>
-            <td style="white-space:pre-wrap;">${escHtml(labelText)}</td>
-          </tr>
-        `);
+      const config = getConfig();
+      if (!config.length){
+        setStatus("Velg minst ett Property Set og minst én property. Deretter klikk objekter i 3D.");
+        return;
       }
-    }
 
-    els.countInfo.textContent = String(picked.size);
-    els.tbody.innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Ingen påskrift ble laget (mangler verdier / filtrert bort).</td></tr>`;
+      if (!picked.size){
+        await clearMarkups();
+        updateButtonsAndTableEmpty();
+        setStatus("Ingen objekt i listen.");
+        return;
+      }
 
-    els.tbody.querySelectorAll("tr.clickable").forEach(tr => {
-      tr.addEventListener("click", async () => {
-        const modelId = tr.getAttribute("data-m");
-        const rid = tr.getAttribute("data-r");
-        await zoomTo(modelId, rid);
+      setStatus(`Oppdaterer ${picked.size} objekter…`);
+
+      await clearMarkups();
+      if (myRun !== refreshRunId) return;
+
+      const rows = [];
+      let idx = 1;
+      let made = 0;
+
+      const perModel = new Map();
+      for (const it of picked.values()){
+        if (!perModel.has(it.modelId)) perModel.set(it.modelId, []);
+        perModel.get(it.modelId).push(Number(it.runtimeId));
+      }
+
+      for (const [modelId, rids] of perModel.entries()){
+        if (myRun !== refreshRunId) return;
+
+        const propsArr = await API.viewer.getObjectProperties(modelId, rids);
+        if (myRun !== refreshRunId) return;
+
+        for (let i=0;i<rids.length;i++){
+          if (myRun !== refreshRunId) return;
+
+          const rid = rids[i];
+          const objProps = propsArr?.[i];
+          if (!objProps) continue;
+          if (isIgnored(objProps)) continue;
+
+          const full = buildLabelText(config, objProps);
+          if (!norm(full)) continue;
+
+          const dyn = buildDynamicLabel(full);
+
+          const guid = await getIfcGuid(modelId, rid);
+          if (myRun !== refreshRunId) return;
+
+          const name = guessObjectName(objProps);
+
+          const mid = await addTextMarkupOverObject(modelId, rid, dyn);
+          if (myRun !== refreshRunId) return;
+
+          if (mid != null){ lastMarkupIds.push(mid); made++; }
+
+          const key = `${modelId}:${rid}`;
+          const store = picked.get(key);
+          if (store){
+            store.name = name;
+            store.guid = guid;
+            store.labelText = full; // FULL tekst i tabell/CSV
+          }
+
+          rows.push(`
+            <tr class="clickable" data-m="${escHtml(modelId)}" data-r="${escHtml(rid)}">
+              <td>${idx++}</td>
+              <td>${escHtml(name)}</td>
+              <td class="mono">${escHtml(guid)}</td>
+              <td style="white-space:pre-wrap;">${escHtml(full)}</td>
+            </tr>
+          `);
+        }
+      }
+
+      if (myRun !== refreshRunId) return;
+
+      els.countInfo.textContent = String(picked.size);
+      els.tbody.innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Ingen påskrift ble laget (mangler verdier / filtrert bort).</td></tr>`;
+
+      els.tbody.querySelectorAll("tr.clickable").forEach(tr => {
+        tr.addEventListener("click", async () => {
+          const modelId = tr.getAttribute("data-m");
+          const rid = tr.getAttribute("data-r");
+          await zoomTo(modelId, rid);
+        });
       });
-    });
 
-    if (lastMarkupIds.length) els.clearBtn.disabled = false;
-    els.csvBtn.disabled = picked.size === 0;
-    els.resetListBtn.disabled = picked.size === 0;
+      els.clearBtn.disabled = !lastMarkupIds.length;
+      els.csvBtn.disabled = picked.size === 0;
+      els.resetListBtn.disabled = picked.size === 0;
 
-    setStatus(`Ferdig. Laget ${made} påskrifter for ${picked.size} objekter.`);
+      setStatus(`Ferdig. Laget ${made} påskrifter for ${picked.size} objekter. (Zoom ut = kortere tekst)`);
+    } catch(e){
+      console.error(e);
+      if (myRun === refreshRunId){
+        setError("Oppdateringsfeil: " + (e.message || e));
+        setStatus("Kunne ikke oppdatere påskrifter.");
+      }
+    } finally {
+      if (myRun === refreshRunId) isRefreshing = false;
+    }
   }
 
+  // -------------------------------------------------------
+  // Viewer selection -> vår liste (multi) / toggle
+  // -------------------------------------------------------
   async function handleSelectionChanged(selection){
     const snap = selectionToSnapshot(selection);
     if (snap === lastSelectionSnapshot) return;
@@ -520,6 +607,7 @@
     }
     if (!keys.length) return;
 
+    // Hvis bare 1 objekt: toggle inn/ut
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -532,6 +620,7 @@
       return;
     }
 
+    // Hvis flere objekter: sett listen lik selection
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -543,6 +632,9 @@
     await refreshFromPicked();
   }
 
+  // -------------------------------------------------------
+  // Scan Psets/props fra modellen
+  // -------------------------------------------------------
   async function scanPsets(){
     try{
       setError("");
@@ -560,7 +652,8 @@
         const objs = m.objects || [];
         if (!modelId || !objs.length) continue;
 
-        const ids = objs.slice(0, 1200).map(o => o.id);
+        // begrens litt for hastighet
+        const ids = objs.slice(0, 1500).map(o => o.id);
         const propsArr = await API.viewer.getObjectProperties(modelId, ids);
 
         for (const objProps of (propsArr || [])){
@@ -595,9 +688,13 @@
     }
   }
 
+  // -------------------------------------------------------
+  // CSV eksport
+  // -------------------------------------------------------
   async function exportCSV(){
     if (!picked.size){ setError("Ingen objekter i listen å eksportere."); return; }
 
+    // Sørg for at vi har oppdatert name/guid/labelText
     await refreshFromPicked();
 
     const config = getConfig();
@@ -636,15 +733,20 @@
     setError("");
   }
 
-  // ✅ Ny: Tøm liste (nullstill tabellen)
+  // -------------------------------------------------------
+  // Tøm liste (fikser loop ved å øke refreshRunId)
+  // -------------------------------------------------------
   async function resetPickedList(){
     setError("");
+
+    // HARD STOP: avbryt alle pågående refresh-async
+    refreshRunId++;
+
     await clearMarkups();
 
     picked.clear();
     updateButtonsAndTableEmpty();
 
-    // Clear selection i viewer
     try{
       await API.viewer.setSelection({ modelObjectIds: [] }, "replace");
     }catch(e){}
@@ -652,9 +754,36 @@
     setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
   }
 
+  // -------------------------------------------------------
+  // Events og connect
+  // -------------------------------------------------------
+  function onWorkspaceEvent(event, payload){
+    const ev = (event || "").toLowerCase();
+
+    // selection events
+    if (ev.includes("selection")){
+      const sel = (payload && payload.data) ? payload.data : [];
+      handleSelectionChanged(sel);
+      return;
+    }
+
+    // camera events (hvis tilgjengelig) -> oppdater lastCamDist, og ev. reflow (debounce)
+    if (ev.includes("camera")){
+      if (camDebounceT) clearTimeout(camDebounceT);
+      camDebounceT = setTimeout(async () => {
+        lastCamDist = await getCameraDistanceEstimate();
+        // Ikke auto-refresh konstant (kan være tungt). Hvis du vil, slå på under:
+        // if (picked.size) refreshFromPicked();
+      }, 250);
+    }
+  }
+
   async function connect(){
     try{
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
+
+      lastCamDist = await getCameraDistanceEstimate();
+
       if (!API?.markup?.addTextMarkup){
         setStatus("Tilkoblet (men MarkupAPI mangler – 3D-tekst støttes ikke i denne workspacen).");
       } else {
@@ -668,14 +797,9 @@
     }
   }
 
-  function onWorkspaceEvent(event, payload){
-    if ((event || "").toLowerCase().includes("selection")){
-      const sel = (payload && payload.data) ? payload.data : [];
-      handleSelectionChanged(sel);
-    }
-  }
-
+  // -------------------------------------------------------
   // UI wiring
+  // -------------------------------------------------------
   els.scanBtn.addEventListener("click", scanPsets);
   els.clearBtn.addEventListener("click", async () => { await clearMarkups(); setStatus("Påskrift fjernet."); });
   els.csvBtn.addEventListener("click", exportCSV);
@@ -686,9 +810,12 @@
   els.psetC.addEventListener("change", () => onPsetChanged(els.psetC, els.c));
 
   [...els.a, ...els.b, ...els.c, els.psetA, els.psetB, els.psetC].forEach(el => {
-    el.addEventListener("change", () => refreshFromPicked());
+    el.addEventListener("change", () => {
+      if (picked.size) refreshFromPicked();
+    });
   });
 
+  // Start
   connect();
 </script>
 </body>
