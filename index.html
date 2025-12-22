@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty PropXractor (Klikk objekt)</title>
+  <title>MultiProperty Labeler (Klikk objekt)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -58,6 +58,41 @@
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .muted{ opacity:.78; }
     .pill{ display:inline-flex; gap:8px; align-items:center; padding:6px 10px; border-radius:999px; background:#f3f4f6; border:1px solid #e5e7eb; font-size:12px;}
+
+    .psetGrid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+      margin-top:10px;
+    }
+    .psetBox{
+      border:1px solid #eef2f7;
+      border-radius:12px;
+      padding:10px;
+      background:#fafafa;
+    }
+    .psetTitle{
+      font-weight:900;
+      font-size:13px;
+      margin-bottom:8px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .psetTitle .tag{
+      font-size:11px;
+      opacity:.8;
+      font-weight:700;
+      background:#fff;
+      border:1px solid #e5e7eb;
+      padding:4px 8px;
+      border-radius:999px;
+    }
+    @media (min-width: 980px){
+      .psetGrid{ grid-template-columns: 1fr 1fr 1fr; }
+      select{ min-width:220px; }
+    }
   </style>
 </head>
 
@@ -68,7 +103,7 @@
          onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
   <div class="titleBlock">
-    <div class="title"> PropXractor</div>
+    <div class="title">MultiProperty Labeler</div>
     <div class="org">Norconsult Norge</div>
     <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
   </div>
@@ -78,44 +113,72 @@
 <main>
   <div class="card">
     <div class="row" style="justify-content:space-between;">
-      <span class="pill">1) Velg Pset + Properties → 2) Klikk objekt i 3D → 3) Tekst vises over objekt</span>
+      <span class="pill">1) Velg Pset A/B/C + Properties → 2) Klikk objekt i 3D → 3) Påskrift vises rett over objektet</span>
       <span class="pill">Filtrerer bort: IFCPROJECT / IFCSITE / IFCBUILDING / IFCBUILDINGSTOREY</span>
     </div>
 
     <div class="row" style="margin-top:10px;">
       <button id="scanButton" disabled>🔄 Oppdater liste</button>
-
-      <label>
-        Property Set:
-        <select id="psetSelect" disabled><option value="">(velg…)</option></select>
-      </label>
+      <button id="clearButton" disabled>🧹 Fjern påskrift</button>
+      <span class="muted" id="selectionInfo">Klikk et objekt i 3D når du har valgt Pset/properties.</span>
     </div>
 
-    <div class="row" style="margin-top:10px;">
-      <label>Property 1:
-        <select id="prop1" disabled><option value="">(velg…)</option></select>
-      </label>
-      <label>Property 2:
-        <select id="prop2" disabled><option value="">(velg…)</option></select>
-      </label>
-    </div>
+    <div class="psetGrid">
+      <div class="psetBox">
+        <div class="psetTitle">Pset A <span class="tag">inkluderes hvis valgt</span></div>
+        <div class="row">
+          <label>Property Set:
+            <select id="psetA" disabled><option value="">(velg…)</option></select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P1:<select id="a1" disabled><option value="">(velg…)</option></select></label>
+          <label>P2:<select id="a2" disabled><option value="">(velg…)</option></select></label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P3:<select id="a3" disabled><option value="">(velg…)</option></select></label>
+          <label>P4:<select id="a4" disabled><option value="">(velg…)</option></select></label>
+        </div>
+      </div>
 
-    <div class="row" style="margin-top:10px;">
-      <label>Property 3:
-        <select id="prop3" disabled><option value="">(velg…)</option></select>
-      </label>
-      <label>Property 4:
-        <select id="prop4" disabled><option value="">(velg…)</option></select>
-      </label>
-    </div>
+      <div class="psetBox">
+        <div class="psetTitle">Pset B <span class="tag">inkluderes hvis valgt</span></div>
+        <div class="row">
+          <label>Property Set:
+            <select id="psetB" disabled><option value="">(velg…)</option></select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P1:<select id="b1" disabled><option value="">(velg…)</option></select></label>
+          <label>P2:<select id="b2" disabled><option value="">(velg…)</option></select></label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P3:<select id="b3" disabled><option value="">(velg…)</option></select></label>
+          <label>P4:<select id="b4" disabled><option value="">(velg…)</option></select></label>
+        </div>
+      </div>
 
-    <div class="row" style="margin-top:10px;">
-      <button id="clearButton" disabled>🧹 Fjern 3D-tekst</button>
-      <span class="muted" id="selectionInfo">Klikk et objekt i 3D når du har valgt properties.</span>
+      <div class="psetBox">
+        <div class="psetTitle">Pset C <span class="tag">inkluderes hvis valgt</span></div>
+        <div class="row">
+          <label>Property Set:
+            <select id="psetC" disabled><option value="">(velg…)</option></select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P1:<select id="c1" disabled><option value="">(velg…)</option></select></label>
+          <label>P2:<select id="c2" disabled><option value="">(velg…)</option></select></label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label>P3:<select id="c3" disabled><option value="">(velg…)</option></select></label>
+          <label>P4:<select id="c4" disabled><option value="">(velg…)</option></select></label>
+        </div>
+      </div>
     </div>
 
     <div class="hint">
-      <b>NB:</b> Tekst tegnes med <b>API.markup.addTextMarkup</b> . Sørg for at <b>Markups/Annotations</b> er slått på i viewer.
+      <b>NB:</b> Påskriften lages med <b>API.markup.addTextMarkup</b> og plasseres <b>rett over objektets topp</b> (vertikal lederlinje).
+      Sørg for at <b>Markups/Annotations</b> er slått på i viewer.
     </div>
 
     <div id="error"></div>
@@ -123,21 +186,22 @@
 
   <div class="card">
     <div class="row" style="justify-content:space-between;">
-      <div style="font-weight:900;">Valgte properties (rekkefølge)</div>
-      <div class="muted small">Tabellen oppdateres automatisk når du endrer valg eller klikker objekt.</div>
+      <div style="font-weight:900;">Tabell (rekkefølge = valgene dine)</div>
+      <div class="muted">Oppdateres når du endrer valg eller klikker objekt.</div>
     </div>
 
-    <div style="max-height:260px; overflow:auto; border:1px solid #eef2f7; border-radius:10px; margin-top:10px;">
+    <div style="max-height:280px; overflow:auto; border:1px solid #eef2f7; border-radius:10px; margin-top:10px;">
       <table>
         <thead>
           <tr>
-            <th style="width:60px;">#</th>
+            <th style="width:70px;">Pset</th>
+            <th style="width:55px;">#</th>
             <th>Property</th>
-            <th>Verdi (for valgt objekt)</th>
+            <th>Verdi (valgt objekt)</th>
           </tr>
         </thead>
         <tbody id="propTableBody">
-          <tr><td colspan="3" class="muted">Velg Pset + properties først, og klikk deretter et objekt i 3D.</td></tr>
+          <tr><td colspan="4" class="muted">Trykk «Oppdater liste», velg Pset A/B/C + properties, og klikk et objekt i 3D.</td></tr>
         </tbody>
       </table>
     </div>
@@ -146,8 +210,10 @@
 
 <script>
   let API = null;
-  let availableProps = {};
-  let lastTextMarkupId = null; // vi viser kun én label (på valgt objekt)
+
+  // Vi lager kun én aktiv markup om gangen, men beholder også en liste for robust “clear”
+  let lastTextMarkupId = null;
+  let allMarkupIdsThisSession = [];
 
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
@@ -156,14 +222,19 @@
     error: document.getElementById("error"),
     scanButton: document.getElementById("scanButton"),
     clearButton: document.getElementById("clearButton"),
-    psetSelect: document.getElementById("psetSelect"),
-    prop1: document.getElementById("prop1"),
-    prop2: document.getElementById("prop2"),
-    prop3: document.getElementById("prop3"),
-    prop4: document.getElementById("prop4"),
+    selectionInfo: document.getElementById("selectionInfo"),
     propTableBody: document.getElementById("propTableBody"),
-    selectionInfo: document.getElementById("selectionInfo")
+
+    psetA: document.getElementById("psetA"),
+    psetB: document.getElementById("psetB"),
+    psetC: document.getElementById("psetC"),
+
+    a: [document.getElementById("a1"),document.getElementById("a2"),document.getElementById("a3"),document.getElementById("a4")],
+    b: [document.getElementById("b1"),document.getElementById("b2"),document.getElementById("b3"),document.getElementById("b4")],
+    c: [document.getElementById("c1"),document.getElementById("c2"),document.getElementById("c3"),document.getElementById("c4")]
   };
+
+  let availableProps = {}; // psetName -> Set(props)
 
   function setStatus(msg){ els.status.textContent = msg; }
   function setError(msg){ els.error.textContent = msg || ""; }
@@ -171,14 +242,6 @@
   function looksLikeIfcEntityName(v){
     const s = normStr(v).toUpperCase();
     return s.startsWith("IFC") ? s : "";
-  }
-
-  function normalizeName(name) {
-    return (name || "")
-      .toString()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
   }
 
   function getIfcEntityTypeFromObjectProps(obj){
@@ -242,47 +305,38 @@
     return false;
   }
 
-  function getSelectedPropsInOrder(){
-    const arr = [els.prop1.value, els.prop2.value, els.prop3.value, els.prop4.value]
-      .map(v => normStr(v))
-      .filter(Boolean);
-    // Behold rekkefølge, men fjern duplikater ved å hoppe over neste forekomst
-    const seen = new Set();
-    const out = [];
-    for (const p of arr){
-      if (seen.has(p)) continue;
-      seen.add(p);
-      out.push(p);
-    }
-    return out;
-  }
-
-  function updateTable(props, valueMap){
-    els.propTableBody.innerHTML = "";
-    if (!props.length){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3" class="muted">Velg Pset + properties først, og klikk deretter et objekt i 3D.</td>`;
-      els.propTableBody.appendChild(tr);
-      return;
-    }
-
-    props.forEach((p, i) => {
-      const v = valueMap ? valueMap[p] : undefined;
-      const vs = (v === undefined || v === null) ? "" : String(v);
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${i+1}</td>
-        <td class="mono">${escapeHtml(p)}</td>
-        <td>${escapeHtml(vs)}</td>
-      `;
-      els.propTableBody.appendChild(tr);
-    });
-  }
-
   function escapeHtml(s){
     return String(s || "")
       .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
       .replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+  }
+
+  function getSelectedConfig(){
+    // Returnerer i definert rekkefølge: A, B, C og property 1..4 i hver
+    const blocks = [
+      { key:"A", pset: els.psetA.value, props: els.a.map(x => x.value) },
+      { key:"B", pset: els.psetB.value, props: els.b.map(x => x.value) },
+      { key:"C", pset: els.psetC.value, props: els.c.map(x => x.value) }
+    ];
+
+    // Behold rekkefølge, fjern tomme og duplikater innen hver blokk
+    const out = [];
+    for (const b of blocks){
+      const pset = normStr(b.pset);
+      if (!pset) continue;
+
+      const seen = new Set();
+      const props = [];
+      for (const p of b.props.map(normStr).filter(Boolean)){
+        if (seen.has(p)) continue;
+        seen.add(p);
+        props.push(p);
+      }
+      if (!props.length) continue;
+
+      out.push({ block: b.key, pset, props });
+    }
+    return out;
   }
 
   function findPropValue(objProps, psetName, propName){
@@ -297,26 +351,78 @@
     return undefined;
   }
 
-  function build3DText(pset, props, valueMap){
-    const lines = [];
-    // kun verdier i rekkefølge (ren tekst)
-    for (const p of props){
-      const v = valueMap[p];
-      const vs = normStr(v);
-      if (vs) lines.push(`${p}: ${vs}`);
+  function updateTable(config, valueMapsPerBlock){
+    els.propTableBody.innerHTML = "";
+
+    if (!config.length){
+      els.propTableBody.innerHTML = `<tr><td colspan="4" class="muted">Velg minst ett Property Set (A/B/C) og minst én property.</td></tr>`;
+      return;
     }
+
+    for (const block of config){
+      const vm = valueMapsPerBlock ? (valueMapsPerBlock[block.block] || {}) : {};
+      block.props.forEach((p, idx) => {
+        const val = vm[p];
+        const vs = (val === undefined || val === null) ? "" : String(val);
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><b>${escapeHtml(block.block)}</b></td>
+          <td>${idx+1}</td>
+          <td class="mono">${escapeHtml(p)}</td>
+          <td>${escapeHtml(vs)}</td>
+        `;
+        els.propTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  function build3DText(config, valueMapsPerBlock){
+    const lines = [];
+
+    for (const block of config){
+      const vm = valueMapsPerBlock[block.block] || {};
+      const part = [];
+
+      for (const p of block.props){
+        const vs = normStr(vm[p]);
+        if (vs) part.push(`${p}: ${vs}`);
+      }
+
+      if (part.length){
+        // Header pr pset-blokk for lesbarhet
+        lines.push(`${block.pset}`);
+        lines.push(...part);
+        lines.push(""); // tom linje mellom blokker
+      }
+    }
+
+    // fjern trailing tomme linjer
+    while (lines.length && normStr(lines[lines.length-1]) === "") lines.pop();
     return lines.join("\n");
   }
 
+  // ---------- Markup helpers ----------
   async function clearTextMarkup(){
-    try{
-      if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
-      if (lastTextMarkupId != null){
+    if (!API || !API.markup || typeof API.markup.removeMarkups !== "function") return;
+
+    // 1) forsøk å fjerne siste
+    if (lastTextMarkupId != null){
+      try{
         await API.markup.removeMarkups([lastTextMarkupId]);
-        lastTextMarkupId = null;
+      }catch(err){
+        console.warn("removeMarkups(last) feilet:", err);
       }
-    }catch(err){
-      console.warn("Klarte ikke å fjerne markup:", err);
+      lastTextMarkupId = null;
+    }
+
+    // 2) fallback: fjerne alt vi har laget (robust)
+    if (allMarkupIdsThisSession.length){
+      try{
+        await API.markup.removeMarkups(allMarkupIdsThisSession.slice());
+      }catch(err){
+        console.warn("removeMarkups(all) feilet:", err);
+      }
+      allMarkupIdsThisSession = [];
     }
   }
 
@@ -334,21 +440,23 @@
     const min = bb.min;
     const max = bb.max;
 
-    // Samme som BIK: anta Y=opp og pos i mm
+    // Midt over objektet (X/Z midt), Y er over topp.
+    // Dette gir minst “side-offset”.
     const centerX_mm = ((min.x + max.x) / 2.0) * 1000.0;
     const centerZ_mm = ((min.z + max.z) / 2.0) * 1000.0;
     const topY_mm    = (max.y) * 1000.0;
 
+    // Vertikal lederlinje, rett over objektets topp
     const startPick = {
       positionX: centerX_mm,
-      positionY: topY_mm + 200.0,
+      positionY: topY_mm + 100.0,   // litt over topp (0.1 m)
       positionZ: centerZ_mm,
       modelId: modelId,
       objectId: runtimeId
     };
     const endPick = {
       positionX: centerX_mm,
-      positionY: topY_mm + 1200.0,
+      positionY: topY_mm + 650.0,   // kortere enn før (0.65 m)
       positionZ: centerZ_mm,
       modelId: modelId,
       objectId: runtimeId
@@ -356,23 +464,62 @@
 
     await clearTextMarkup();
 
-    const markup = { start: startPick, end: endPick, text, color: { r: 0, g: 0, b: 204, a: 255 } };
+    const markup = {
+      start: startPick,
+      end: endPick,
+      text,
+      color: { r: 0, g: 0, b: 204, a: 255 }
+    };
+
     const created = await API.markup.addTextMarkup([markup]);
     if (created && created.length && typeof created[0].id === "number"){
       lastTextMarkupId = created[0].id;
+      allMarkupIdsThisSession.push(created[0].id);
       els.clearButton.disabled = false;
     }
   }
 
-  // ----------------- Scan Pset + properties -----------------
-  async function scanProperties(){
+  // ---------- Populate helpers ----------
+  function fillPsetSelect(selectEl, psetNames){
+    selectEl.innerHTML = '<option value="">(velg…)</option>';
+    for (const n of psetNames){
+      const opt = document.createElement("option");
+      opt.value = n;
+      opt.textContent = n;
+      selectEl.appendChild(opt);
+    }
+    selectEl.disabled = false;
+  }
+
+  function fillPropSelects(propSelectEls, props){
+    for (const sel of propSelectEls){
+      sel.innerHTML = '<option value="">(velg…)</option>';
+      for (const p of props){
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        sel.appendChild(opt);
+      }
+      sel.disabled = false;
+    }
+  }
+
+  function clearPropSelects(propSelectEls){
+    for (const sel of propSelectEls){
+      sel.innerHTML = '<option value="">(velg…)</option>';
+      sel.disabled = true;
+    }
+  }
+
+  // ---------- Scan ----------
+  async function scanAllPsetsAndProps(){
     setError("");
     setStatus("Skanner modell for Property Sets…");
     availableProps = {};
 
-    els.psetSelect.disabled = true;
-    els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
-    [els.prop1, els.prop2, els.prop3, els.prop4].forEach(s => { s.disabled = true; s.innerHTML = '<option value="">(velg…)</option>'; });
+    // disable
+    [els.psetA, els.psetB, els.psetC].forEach(s => { s.disabled = true; s.innerHTML = '<option value="">(velg…)</option>'; });
+    clearPropSelects(els.a); clearPropSelects(els.b); clearPropSelects(els.c);
 
     try{
       const models = await API.viewer.getObjects();
@@ -410,15 +557,12 @@
         return;
       }
 
-      for (const n of psetNames){
-        const opt = document.createElement("option");
-        opt.value = n;
-        opt.textContent = n;
-        els.psetSelect.appendChild(opt);
-      }
-      els.psetSelect.disabled = false;
+      fillPsetSelect(els.psetA, psetNames);
+      fillPsetSelect(els.psetB, psetNames);
+      fillPsetSelect(els.psetC, psetNames);
 
-      setStatus("Ferdig. Velg Property Set, deretter Property 1–4. Klikk så et objekt i 3D.");
+      setStatus("Ferdig. Velg Pset A/B/C + properties, og klikk et objekt i 3D.");
+      updateTable(getSelectedConfig(), null);
     }catch(err){
       console.error(err);
       setError("Feil ved skanning: " + (err.message || err));
@@ -426,24 +570,35 @@
     }
   }
 
-  function populatePropDropdowns(pset){
-    const props = (availableProps[pset] ? Array.from(availableProps[pset]) : []).sort((a,b)=>a.localeCompare(b,"nb"));
-    const selects = [els.prop1, els.prop2, els.prop3, els.prop4];
-    selects.forEach(sel => {
-      sel.innerHTML = '<option value="">(velg…)</option>';
-      for (const p of props){
-        const opt = document.createElement("option");
-        opt.value = p;
-        opt.textContent = p;
-        sel.appendChild(opt);
-      }
-      sel.disabled = false;
-    });
+  function onPsetChanged(psetSelect, propSelectEls){
+    setError("");
+    const psetName = normStr(psetSelect.value);
+    if (!psetName){
+      clearPropSelects(propSelectEls);
+      updateTable(getSelectedConfig(), null);
+      clearTextMarkup();
+      els.clearButton.disabled = true;
+      els.selectionInfo.textContent = "Klikk et objekt i 3D når du har valgt Pset/properties.";
+      return;
+    }
 
-    updateTable(getSelectedPropsInOrder(), null);
+    const props = Array.from(availableProps[psetName] || []).sort((a,b)=>a.localeCompare(b,"nb"));
+    fillPropSelects(propSelectEls, props);
+
+    updateTable(getSelectedConfig(), null);
+    clearTextMarkup();
+    els.clearButton.disabled = true;
+    els.selectionInfo.textContent = "Klikk et objekt i 3D for å vise oppdatert påskrift.";
   }
 
-  // ----------------- Selection listener -----------------
+  function onPropChanged(){
+    updateTable(getSelectedConfig(), null);
+    clearTextMarkup();
+    els.clearButton.disabled = true;
+    els.selectionInfo.textContent = "Klikk objekt i 3D for å oppdatere påskrift med nye valg.";
+  }
+
+  // ---------- Selection handler ----------
   function onWorkspaceEvent(event, payload){
     if (event === "viewer.onSelectionChanged" || event === "selection-changed"){
       handleSelectionChanged(payload).catch(err => {
@@ -456,15 +611,11 @@
   async function handleSelectionChanged(payload){
     setError("");
 
-    const pset = els.psetSelect.value;
-    const props = getSelectedPropsInOrder();
+    const config = getSelectedConfig();
+    updateTable(config, null);
 
-    // Oppdater tabellen uansett (rekkefølge)
-    updateTable(props, null);
-
-    // Må ha valgt Pset + minst én property
-    if (!pset || !props.length){
-      els.selectionInfo.textContent = "Velg PropertySet og minst én property før du klikker objekt i 3D.";
+    if (!config.length){
+      els.selectionInfo.textContent = "Velg minst ett Pset (A/B/C) og minst én property før du klikker objekt.";
       await clearTextMarkup();
       els.clearButton.disabled = true;
       return;
@@ -481,7 +632,6 @@
     const first = selection[0];
     const modelId = first.modelId;
     const runtimeIds = first.objectRuntimeIds || [];
-
     if (!modelId || !runtimeIds.length){
       els.selectionInfo.textContent = "Ingen gyldig objekt i utvalget.";
       await clearTextMarkup();
@@ -502,7 +652,6 @@
 
     const objProps = propsArr[0];
 
-    // Filtrer bort IFCPROJECT/IFCSITE/IFCBUILDING/IFCBUILDINGSTOREY
     if (isIgnoredIfcEntity(objProps)){
       els.selectionInfo.textContent = "Valgt objekt er et container-objekt (filtrert bort). Velg et annet objekt.";
       await clearTextMarkup();
@@ -510,27 +659,31 @@
       return;
     }
 
-    // Les verdier i riktig rekkefølge
-    const valueMap = {};
-    for (const p of props){
-      valueMap[p] = findPropValue(objProps, pset, p);
+    // Bygg value-maps per blokk
+    const valueMaps = {};
+    for (const block of config){
+      const vm = {};
+      for (const p of block.props){
+        vm[p] = findPropValue(objProps, block.pset, p);
+      }
+      valueMaps[block.block] = vm;
     }
 
-    updateTable(props, valueMap);
+    updateTable(config, valueMaps);
 
-    const text = build3DText(pset, props, valueMap);
-    if (!text){
+    const text = build3DText(config, valueMaps);
+    if (!normStr(text)){
       els.selectionInfo.textContent = "Ingen av valgte properties har verdi på dette objektet.";
       await clearTextMarkup();
       els.clearButton.disabled = true;
       return;
     }
 
-    // Lag 3D tekst (BIK-metoden)
     await showTextMarkupOverObject(modelId, runtimeId, text);
-    els.selectionInfo.textContent = "✅ Viser 3D-tekst (sjekk at Markups/Annotations er på).";
+    els.selectionInfo.textContent = "✅ Viser påskrift rett over objektet (sjekk at Markups/Annotations er på).";
   }
 
+  // ---------- Connect ----------
   async function connect(){
     try{
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
@@ -550,36 +703,25 @@
     }
   }
 
-  // UI events
-  els.scanButton.onclick = scanProperties;
-
-  els.psetSelect.onchange = (e) => {
-    setError("");
-    const pset = e.target.value;
-    populatePropDropdowns(pset);
-    clearTextMarkup();
-    els.clearButton.disabled = true;
-    els.selectionInfo.textContent = "Klikk et objekt i 3D for å vise 3D-tekst.";
-  };
-
-  [els.prop1, els.prop2, els.prop3, els.prop4].forEach(sel => {
-    sel.onchange = () => {
-      // Oppdater tabell rekkefølge når bruker endrer properties
-      updateTable(getSelectedPropsInOrder(), null);
-      clearTextMarkup();
-      els.clearButton.disabled = true;
-      els.selectionInfo.textContent = "Klikk objekt i 3D for å oppdatere 3D-tekst med nye property-valg.";
-    };
-  });
+  // UI wiring
+  els.scanButton.onclick = scanAllPsetsAndProps;
 
   els.clearButton.onclick = async () => {
     await clearTextMarkup();
     els.clearButton.disabled = true;
     els.selectionInfo.textContent = "Påskrift fjernet. Klikk objekt i 3D for å vise igjen.";
+    setError("");
+    setStatus("Påskrift fjernet.");
   };
 
+  els.psetA.onchange = () => onPsetChanged(els.psetA, els.a);
+  els.psetB.onchange = () => onPsetChanged(els.psetB, els.b);
+  els.psetC.onchange = () => onPsetChanged(els.psetC, els.c);
+
+  [...els.a, ...els.b, ...els.c].forEach(sel => sel.onchange = onPropChanged);
+
+  // Start
   connect();
 </script>
 </body>
 </html>
-
