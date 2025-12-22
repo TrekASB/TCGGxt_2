@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiPropLabel</title>
+  <title>MultiProperty Påskrift</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -77,14 +77,13 @@
          onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
   <div class="titleBlock">
-    <div class="title">MultiPropLabel</div>
+    <div class="title">MultiProperty Påskrift</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
   </div>
   <div class="status" id="status">Kobler til Trimble Connect…</div>
 </header>
 
 <main>
-  <!-- VENSTRE: valg -->
   <div class="card">
     <div class="row space">
       <div class="row" style="gap:8px;align-items:center;">
@@ -133,14 +132,12 @@
     </div>
 
     <div class="muted hint">
-      Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst. <br>
-      Vanlig klikk = toggle i vår liste (vi synker selection tilbake til viewer). Ctrl/Shift kan brukes i TC også.
+      Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.
       <br><br>
-      <b>Dynamikk:</b> Teksten blir automatisk “kortere” når du er langt unna (zoomet ut) for å unngå store tekstblokker.
+      <b>Zoom-regel:</b> Tekst endres <b>ikke</b> ved zoom ut. Tekst kan forkortes (bli “mindre”) <b>kun</b> ved zoom inn.
     </div>
   </div>
 
-  <!-- HØYRE: tabell -->
   <div class="card">
     <div class="row space">
       <b>Valgte objekter (liste for eksport)</b>
@@ -171,21 +168,34 @@
   let lastMarkupIds = [];
   const ifcGuidCache = new Map();
 
-  // Valgte objekter
   const picked = new Map(); // key modelId:runtimeId -> { modelId, runtimeId, name, guid, labelText }
 
-  // Selection snapshot for å unngå loops
+  // --- Selection guards (løser "Tøm liste" -> gamle objekter kommer tilbake) ---
   let lastSelectionSnapshot = "";
+  let selectionLockUntil = 0;
+  let selectionLockDepth = 0;
+  let lastProgrammaticSnapshot = "";
 
-  // Abort / dedupe av async refresh (fikser "Tøm liste" bug)
+  function nowMs(){ return Date.now(); }
+  function lockSelectionFor(ms){ selectionLockUntil = Math.max(selectionLockUntil, nowMs() + ms); }
+  function isSelectionLocked(){ return selectionLockDepth > 0 || nowMs() < selectionLockUntil; }
+
+  async function withSelectionSuppressed(fn, msAfter = 350){
+    selectionLockDepth++;
+    try{ await fn(); }
+    finally{
+      selectionLockDepth = Math.max(0, selectionLockDepth - 1);
+      lockSelectionFor(msAfter);
+    }
+  }
+
+  // Abort/dedupe async refresh
   let refreshRunId = 0;
-  let isRefreshing = false;
 
-  // Zoom-estimat
+  // Camera dist
   let lastCamDist = null;
-  let camDebounceT = null;
 
-  // IFC root/container filter
+  // IFC filter
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
   const els = {
@@ -385,14 +395,19 @@
     return null;
   }
 
+  // === ØNSKET LOGIKK ===
+  // Ikke endre tekst ved zoom UT. Kun forkort (gjør "mindre") ved zoom INN.
   function buildDynamicLabel(fullText){
     const base = String(fullText || "");
-    if (lastCamDist == null) return clampLines(base, 8);
+    if (lastCamDist == null) return base;
 
-    if (lastCamDist > 250) return clampLines(base, 2);
-    if (lastCamDist > 120) return clampLines(base, 4);
-    if (lastCamDist > 60)  return clampLines(base, 6);
-    return clampLines(base, 10);
+    // Kun ved nær kamera forkortes teksten
+    if (lastCamDist < 25) return clampLines(base, 2);
+    if (lastCamDist < 45) return clampLines(base, 4);
+    if (lastCamDist < 70) return clampLines(base, 6);
+
+    // Zoom ut / normal: uendret
+    return base;
   }
 
   async function clearMarkups(){
@@ -417,7 +432,6 @@
     const bb = boxes[0].boundingBox;
     const min = bb.min, max = bb.max;
 
-    // Sentrum XZ + topp Y (samme metodikk som BIK-skriptet)
     const cx_mm = ((min.x + max.x) / 2) * 1000;
     const cz_mm = ((min.z + max.z) / 2) * 1000;
     const topY_mm = (max.y) * 1000;
@@ -436,8 +450,10 @@
 
   async function zoomTo(modelId, runtimeId){
     const selector = { modelObjectIds: [{ modelId, objectRuntimeIds: [Number(runtimeId)] }] };
-    try{ await API.viewer.setSelection(selector, "replace"); } catch {}
-    try{ await API.viewer.setCamera(selector, { animationTime: 650 }); } catch {}
+    await withSelectionSuppressed(async () => {
+      try{ await API.viewer.setSelection(selector, "replace"); }catch{}
+      try{ await API.viewer.setCamera(selector, { animationTime: 650 }); }catch{}
+    }, 250);
   }
 
   function selectionToSnapshot(sel){
@@ -447,6 +463,22 @@
       parts.push(`${s.modelId}:${ids.join(",")}`);
     }
     return parts.sort().join("|");
+  }
+
+  async function setViewerSelectionSafe(modelObjectIds, msAfter=450){
+    const snap = selectionToSnapshot((modelObjectIds||[]).map(x => ({
+      modelId: x.modelId,
+      objectRuntimeIds: x.objectRuntimeIds
+    })));
+    lastProgrammaticSnapshot = snap;
+
+    await withSelectionSuppressed(async () => {
+      try{
+        await API.viewer.setSelection({ modelObjectIds }, "replace");
+      }catch(e){
+        console.warn("setSelection feilet:", e);
+      }
+    }, msAfter);
   }
 
   async function syncViewerSelectionFromPicked(){
@@ -459,9 +491,7 @@
     for (const [modelId, ids] of byModel.entries()){
       modelObjectIds.push({ modelId, objectRuntimeIds: ids });
     }
-    try{
-      await API.viewer.setSelection({ modelObjectIds }, "replace");
-    }catch(e){}
+    await setViewerSelectionSafe(modelObjectIds, 450);
   }
 
   function updateButtonsAndTableEmpty(){
@@ -473,12 +503,8 @@
     }
   }
 
-  // -------------------------------------------------------
-  // REFRESH (med abort-token) + dynamisk label (kort/lang)
-  // -------------------------------------------------------
   async function refreshFromPicked(){
     const myRun = ++refreshRunId;
-    isRefreshing = true;
 
     try{
       setError("");
@@ -548,7 +574,7 @@
           if (store){
             store.name = name;
             store.guid = guid;
-            store.labelText = full; // FULL tekst i tabell/CSV
+            store.labelText = full;
           }
 
           rows.push(`
@@ -579,23 +605,26 @@
       els.csvBtn.disabled = picked.size === 0;
       els.resetListBtn.disabled = picked.size === 0;
 
-      setStatus(`Ferdig. Laget ${made} påskrifter for ${picked.size} objekter. (Zoom ut = kortere tekst)`);
-    } catch(e){
+      setStatus(`Ferdig. Laget ${made} påskrifter for ${picked.size} objekter.`);
+    }catch(e){
       console.error(e);
       if (myRun === refreshRunId){
         setError("Oppdateringsfeil: " + (e.message || e));
         setStatus("Kunne ikke oppdatere påskrifter.");
       }
-    } finally {
-      if (myRun === refreshRunId) isRefreshing = false;
     }
   }
 
-  // -------------------------------------------------------
-  // Viewer selection -> vår liste (multi) / toggle
-  // -------------------------------------------------------
   async function handleSelectionChanged(selection){
+    if (isSelectionLocked()) return;
+
     const snap = selectionToSnapshot(selection);
+
+    if (snap && snap === lastProgrammaticSnapshot){
+      lastSelectionSnapshot = snap;
+      return;
+    }
+
     if (snap === lastSelectionSnapshot) return;
     lastSelectionSnapshot = snap;
 
@@ -607,7 +636,6 @@
     }
     if (!keys.length) return;
 
-    // Hvis bare 1 objekt: toggle inn/ut
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -615,12 +643,12 @@
         const [modelId, runtimeId] = key.split(":");
         picked.set(key, { modelId, runtimeId });
       }
+
       await syncViewerSelectionFromPicked();
       await refreshFromPicked();
       return;
     }
 
-    // Hvis flere objekter: sett listen lik selection
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -628,13 +656,11 @@
         picked.set(key, { modelId: s.modelId, runtimeId: rid });
       }
     }
+
     await syncViewerSelectionFromPicked();
     await refreshFromPicked();
   }
 
-  // -------------------------------------------------------
-  // Scan Psets/props fra modellen
-  // -------------------------------------------------------
   async function scanPsets(){
     try{
       setError("");
@@ -652,7 +678,6 @@
         const objs = m.objects || [];
         if (!modelId || !objs.length) continue;
 
-        // begrens litt for hastighet
         const ids = objs.slice(0, 1500).map(o => o.id);
         const propsArr = await API.viewer.getObjectProperties(modelId, ids);
 
@@ -688,13 +713,9 @@
     }
   }
 
-  // -------------------------------------------------------
-  // CSV eksport
-  // -------------------------------------------------------
   async function exportCSV(){
     if (!picked.size){ setError("Ingen objekter i listen å eksportere."); return; }
 
-    // Sørg for at vi har oppdatert name/guid/labelText
     await refreshFromPicked();
 
     const config = getConfig();
@@ -733,55 +754,47 @@
     setError("");
   }
 
-  // -------------------------------------------------------
-  // Tøm liste (fikser loop ved å øke refreshRunId)
-  // -------------------------------------------------------
   async function resetPickedList(){
     setError("");
 
-    // HARD STOP: avbryt alle pågående refresh-async
+    // STOP pågående refresh
     refreshRunId++;
 
-    await clearMarkups();
+    // Lås selection-events
+    lockSelectionFor(1200);
 
+    // Fjern markups + data
+    await clearMarkups();
     picked.clear();
     updateButtonsAndTableEmpty();
 
-    try{
-      await API.viewer.setSelection({ modelObjectIds: [] }, "replace");
-    }catch(e){}
+    // Nullstill snapshots
+    lastSelectionSnapshot = "";
+    lastProgrammaticSnapshot = "";
+
+    // Sett selection tomt i viewer
+    await setViewerSelectionSafe([], 900);
 
     setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
   }
 
-  // -------------------------------------------------------
-  // Events og connect
-  // -------------------------------------------------------
   function onWorkspaceEvent(event, payload){
     const ev = (event || "").toLowerCase();
 
-    // selection events
     if (ev.includes("selection")){
       const sel = (payload && payload.data) ? payload.data : [];
       handleSelectionChanged(sel);
       return;
     }
 
-    // camera events (hvis tilgjengelig) -> oppdater lastCamDist, og ev. reflow (debounce)
     if (ev.includes("camera")){
-      if (camDebounceT) clearTimeout(camDebounceT);
-      camDebounceT = setTimeout(async () => {
-        lastCamDist = await getCameraDistanceEstimate();
-        // Ikke auto-refresh konstant (kan være tungt). Hvis du vil, slå på under:
-        // if (picked.size) refreshFromPicked();
-      }, 250);
+      setTimeout(async () => { lastCamDist = await getCameraDistanceEstimate(); }, 0);
     }
   }
 
   async function connect(){
     try{
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
-
       lastCamDist = await getCameraDistanceEstimate();
 
       if (!API?.markup?.addTextMarkup){
@@ -790,6 +803,10 @@
         setStatus("Tilkoblet. Trykk «Oppdater liste» for å hente Pset/properties.");
       }
       els.scanBtn.disabled = false;
+      els.clearBtn.disabled = true;
+      els.csvBtn.disabled = true;
+      els.resetListBtn.disabled = true;
+
     }catch(e){
       console.error(e);
       setError("Kunne ikke koble til Trimble Connect: " + (e.message || e));
@@ -797,9 +814,6 @@
     }
   }
 
-  // -------------------------------------------------------
-  // UI wiring
-  // -------------------------------------------------------
   els.scanBtn.addEventListener("click", scanPsets);
   els.clearBtn.addEventListener("click", async () => { await clearMarkups(); setStatus("Påskrift fjernet."); });
   els.csvBtn.addEventListener("click", exportCSV);
@@ -810,14 +824,10 @@
   els.psetC.addEventListener("change", () => onPsetChanged(els.psetC, els.c));
 
   [...els.a, ...els.b, ...els.c, els.psetA, els.psetB, els.psetC].forEach(el => {
-    el.addEventListener("change", () => {
-      if (picked.size) refreshFromPicked();
-    });
+    el.addEventListener("change", () => { if (picked.size) refreshFromPicked(); });
   });
 
-  // Start
   connect();
 </script>
 </body>
 </html>
-
