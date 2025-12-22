@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty Påskrift</title>
+  <title>MultiPropertyLabel</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -20,9 +20,12 @@
       box-shadow:0 1px 3px rgba(15,23,42,.08);flex:0 0 auto;
     }
     .logoWrap img{width:84px;height:84px;object-fit:contain;display:block;}
+
     .titleBlock{display:flex;flex-direction:column;gap:2px;}
     .title{font-weight:900;font-size:18px;color:var(--primary);line-height:1.1;}
-    .sub{font-size:12px;color:var(--muted);}
+    .org{font-size:13px;font-weight:700;color:#111827;line-height:1.1;}
+    .dev{font-size:12px;color:var(--muted);font-style:italic;line-height:1.1;}
+    .sub{font-size:12px;color:var(--muted);margin-top:2px;}
     .status{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;}
 
     main{padding:12px;display:grid;gap:12px;grid-template-columns:1fr;}
@@ -83,10 +86,14 @@
          alt="Norconsult"
          onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
+
   <div class="titleBlock">
-    <div class="title">MultiProperty Påskrift</div>
+    <div class="title">MultiPropertyLabel</div>
+    <div class="org">Norconsult Norge</div>
+    <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
   </div>
+
   <div class="status" id="status">Kobler til Trimble Connect…</div>
 </header>
 
@@ -339,7 +346,6 @@
 
     const props = Array.from(availableProps[pset] || []).sort((a,b)=>a.localeCompare(b,"nb"));
     fillPropSelects(propSelects, props);
-    // Rebuild markups (tekst) basert på nye valg
     refreshFromPicked();
   }
 
@@ -397,7 +403,7 @@
     return lines.join("\n");
   }
 
-  // Kompakt tekst: maks 1-2 linjer per Pset og max 4 linjer totalt (reduser overlapp når zoomet ut)
+  // Kompakt tekst: reduser overlapp ved zoom ut
   function buildCompactText(config, objProps){
     const lines = [];
     for (const block of config){
@@ -408,10 +414,7 @@
       for (const prop of block.props){
         const v = findValue(objProps, block.pset, prop);
         const vs = norm(v);
-        if (vs){
-          firstLine = `${prop}: ${vs}`;
-          break;
-        }
+        if (vs){ firstLine = `${prop}: ${vs}`; break; }
       }
       if (firstLine){
         lines.push(block.pset);
@@ -421,7 +424,7 @@
     return lines.slice(0, 4).join("\n");
   }
 
-  // === Kamera distanse (hvis støttet) ===
+  // Kamera distanse (om støttet)
   async function getCameraDistanceMeters(){
     try{
       if (!API?.viewer?.getCamera) return null;
@@ -432,28 +435,22 @@
       const tgt = cam.target || cam.lookAt || cam.cameraTarget;
       if (!pos || !tgt) return null;
 
-      const dx = (pos.x - tgt.x);
-      const dy = (pos.y - tgt.y);
-      const dz = (pos.z - tgt.z);
+      const dx = (pos.x - tgt.x), dy = (pos.y - tgt.y), dz = (pos.z - tgt.z);
       const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
       return Number.isFinite(dist) ? dist : null;
-    }catch(e){
-      return null;
-    }
+    }catch(e){ return null; }
   }
 
   function wantCompact(distanceMeters){
     if (!els.autoCompact.checked) return false;
     const thr = Number(els.compactThreshold.value || 120);
-    if (!distanceMeters || !Number.isFinite(distanceMeters)) return true; // fallback: kompakt for å redusere overlapp
+    if (!distanceMeters || !Number.isFinite(distanceMeters)) return true;
     return distanceMeters > thr;
   }
 
   function scheduleRebuildMarkupsOnly(){
     if (camDebounce) clearTimeout(camDebounce);
-    camDebounce = setTimeout(async () => {
-      await rebuildMarkupsOnly();
-    }, 220);
+    camDebounce = setTimeout(async () => { await rebuildMarkupsOnly(); }, 220);
   }
 
   async function clearMarkups(){
@@ -469,17 +466,13 @@
     }
   }
 
-  // Spred labels litt for å redusere overlapp
+  // Spre labels litt (anti-overlapp)
   function staggerOffsetMm(index){
     const step = 140; // mm
     const side = 120; // mm
     const row = index % 6;
     const col = Math.floor(index / 6) % 2;
-    return {
-      dy: row * step,
-      dx: (col === 0 ? -side : side) * (row % 2 ? 1 : -1),
-      dz: 0
-    };
+    return { dy: row * step, dx: (col === 0 ? -side : side) * (row % 2 ? 1 : -1), dz: 0 };
   }
 
   async function addTextMarkupOverObject(modelId, runtimeId, text, indexForStagger){
@@ -535,11 +528,8 @@
     })));
 
     await withSelectionSuppressed(async () => {
-      try{
-        await API.viewer.setSelection({ modelObjectIds }, "replace");
-      }catch(e){
-        console.warn("setSelection feilet:", e);
-      }
+      try{ await API.viewer.setSelection({ modelObjectIds }, "replace"); }
+      catch(e){ console.warn("setSelection feilet:", e); }
     }, msAfter);
   }
 
@@ -560,6 +550,7 @@
     els.countInfo.textContent = String(picked.size);
     els.csvBtn.disabled = picked.size === 0;
     els.resetListBtn.disabled = picked.size === 0;
+
     if (picked.size === 0){
       els.tbody.innerHTML = `<tr><td colspan="4" class="muted">Klikk objekter i modellen for å legge dem i listen.</td></tr>`;
     }
@@ -573,6 +564,7 @@
     }
 
     const myRun = ++refreshRunId;
+
     try{
       const dist = await getCameraDistanceMeters();
       const compact = wantCompact(dist);
@@ -594,10 +586,7 @@
       }
 
       els.clearBtn.disabled = !lastMarkupIds.length;
-      setStatus(compact
-        ? `Kompakt visning (zoom ut). Påskrifter: ${made}.`
-        : `Full visning (zoom inn). Påskrifter: ${made}.`
-      );
+      setStatus(compact ? `Kompakt visning (zoom ut). Påskrifter: ${made}.` : `Full visning (zoom inn). Påskrifter: ${made}.`);
     }catch(e){
       console.error(e);
       setError("Klarte ikke å bygge om påskrifter: " + (e.message || e));
@@ -700,6 +689,64 @@
     }
   }
 
+  async function exportCSV(){
+    if (!picked.size){ setError("Ingen objekter i listen å eksportere."); return; }
+
+    await refreshFromPicked();
+
+    const config = getConfig();
+    const configText = config.map(b => `${b.pset} -> ${b.props.join(", ")}`).join(" | ");
+
+    const header = ["#", "ModelId", "RuntimeId", "ObjectName", "IfcGlobalId", "Config", "LabelTextFull", "LabelTextCompact"];
+    const rows = [header.join(";")];
+
+    let i = 1;
+    for (const it of picked.values()){
+      rows.push([
+        i++,
+        it.modelId || "",
+        it.runtimeId || "",
+        it.name || "",
+        it.guid || "",
+        configText,
+        (it.fullText || "").replace(/\r?\n/g, "\\n"),
+        (it.compactText || "").replace(/\r?\n/g, "\\n")
+      ].map(escapeCSV).join(";"));
+    }
+
+    const csvContent = rows.join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    const dateStr = new Date().toISOString().slice(0,10);
+    link.href = url;
+    link.download = `TC_MultiPropertyLabel_ValgteObjekter_${dateStr}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setStatus(`📤 Eksporterte ${picked.size} objekter til CSV.`);
+    setError("");
+  }
+
+  async function resetPickedList(){
+    setError("");
+    refreshRunId++;
+    lockSelectionFor(1200);
+
+    await clearMarkups();
+    picked.clear();
+    updateButtonsAndTableEmpty();
+
+    lastSelectionSnapshot = "";
+    lastProgrammaticSnapshot = "";
+
+    await setViewerSelectionSafe([], 900);
+    setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
+  }
+
   async function handleSelectionChanged(selection){
     if (isSelectionLocked()) return;
 
@@ -719,7 +766,7 @@
     }
     if (!keys.length) return;
 
-    // Ett objekt: toggle i listen
+    // 1 objekt: toggle
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -732,7 +779,7 @@
       return;
     }
 
-    // Multi: sett listen lik selection (Ctrl/Shift)
+    // Multi: sett listen lik selection
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -797,64 +844,6 @@
     }
   }
 
-  async function exportCSV(){
-    if (!picked.size){ setError("Ingen objekter i listen å eksportere."); return; }
-
-    await refreshFromPicked();
-
-    const config = getConfig();
-    const configText = config.map(b => `${b.pset} -> ${b.props.join(", ")}`).join(" | ");
-
-    const header = ["#", "ModelId", "RuntimeId", "ObjectName", "IfcGlobalId", "Config", "LabelTextFull", "LabelTextCompact"];
-    const rows = [header.join(";")];
-
-    let i = 1;
-    for (const it of picked.values()){
-      rows.push([
-        i++,
-        it.modelId || "",
-        it.runtimeId || "",
-        it.name || "",
-        it.guid || "",
-        configText,
-        (it.fullText || "").replace(/\r?\n/g, "\\n"),
-        (it.compactText || "").replace(/\r?\n/g, "\\n")
-      ].map(escapeCSV).join(";"));
-    }
-
-    const csvContent = rows.join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    const dateStr = new Date().toISOString().slice(0,10);
-    link.href = url;
-    link.download = `TC_Paskrift_ValgteObjekter_${dateStr}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    setStatus(`📤 Eksporterte ${picked.size} objekter til CSV.`);
-    setError("");
-  }
-
-  async function resetPickedList(){
-    setError("");
-    refreshRunId++;
-    lockSelectionFor(1200);
-
-    await clearMarkups();
-    picked.clear();
-    updateButtonsAndTableEmpty();
-
-    lastSelectionSnapshot = "";
-    lastProgrammaticSnapshot = "";
-
-    await setViewerSelectionSafe([], 900);
-    setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
-  }
-
   function onWorkspaceEvent(event, payload){
     const ev = (event || "").toLowerCase();
 
@@ -864,7 +853,6 @@
       return;
     }
 
-    // Kamera-endringer: ikke alle workspaces sender dette, men støttes i noen.
     if (ev.includes("camera")){
       scheduleRebuildMarkupsOnly();
       return;
@@ -876,10 +864,10 @@
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
 
       els.scanBtn.disabled = false;
-      els.clearBtn.disabled = false; // kan brukes selv om det ikke finnes markups
+      els.clearBtn.disabled = false;
       setStatus("✅ Tilkoblet. Trykk «Oppdater liste» for å fylle Pset/Property.");
 
-      // Event fallback: poll kamera av og til for komprimering (siden camera-event kan mangle)
+      // Poll kamera: komprimering ved zoom ut
       setInterval(async () => {
         if (!els.autoCompact.checked) return;
         if (!picked.size) return;
