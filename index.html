@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiProperty Påskrift</title>
+  <title>MultiPropertyLabel</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -77,7 +77,7 @@
          onerror="this.style.display='none'; this.parentElement.textContent='Norconsult'; this.parentElement.style.fontWeight='900';">
   </div>
   <div class="titleBlock">
-    <div class="title">MultiProperty Påskrift</div>
+    <div class="title">MultiPropertyLabel</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
   </div>
   <div class="status" id="status">Kobler til Trimble Connect…</div>
@@ -132,9 +132,11 @@
     </div>
 
     <div class="muted hint">
-      Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.
+      Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
+      <b>NB:</b> Denne versjonen bruker <b>ingen</b> dynamisk tekst (alltid full tekst).
       <br><br>
-      <b>Zoom-regel:</b> Tekst endres <b>ikke</b> ved zoom ut. Tekst kan forkortes (bli “mindre”) <b>kun</b> ved zoom inn.
+      <b>Font/size:</b> Trimble Connect Markup API lar normalt ikke tvinge <i>Times New Roman 12</i> via script.
+      Vi viser derfor konstant tekstinnhold, men viewer bestemmer font/visuell størrelse.
     </div>
   </div>
 
@@ -191,9 +193,6 @@
 
   // Abort/dedupe async refresh
   let refreshRunId = 0;
-
-  // Camera dist
-  let lastCamDist = null;
 
   // IFC filter
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
@@ -375,39 +374,11 @@
     return lines.join("\n");
   }
 
-  function clampLines(text, maxLines){
-    const lines = String(text || "").split(/\r?\n/);
-    if (lines.length <= maxLines) return text;
-    return lines.slice(0, maxLines).join("\n") + "\n…";
-  }
-
-  async function getCameraDistanceEstimate(){
-    try{
-      if (API?.viewer?.getCamera){
-        const cam = await API.viewer.getCamera();
-        const p = cam?.position, t = cam?.target;
-        if (p && t && typeof p.x === "number"){
-          const dx=p.x-t.x, dy=p.y-t.y, dz=p.z-t.z;
-          return Math.sqrt(dx*dx+dy*dy+dz*dz);
-        }
-      }
-    }catch(e){}
-    return null;
-  }
-
-  // === ØNSKET LOGIKK ===
-  // Ikke endre tekst ved zoom UT. Kun forkort (gjør "mindre") ved zoom INN.
+  // ===========================
+  // INGEN dynamikk ved zooming:
+  // ===========================
   function buildDynamicLabel(fullText){
-    const base = String(fullText || "");
-    if (lastCamDist == null) return base;
-
-    // Kun ved nær kamera forkortes teksten
-    if (lastCamDist < 25) return clampLines(base, 2);
-    if (lastCamDist < 45) return clampLines(base, 4);
-    if (lastCamDist < 70) return clampLines(base, 6);
-
-    // Zoom ut / normal: uendret
-    return base;
+    return String(fullText || "");
   }
 
   async function clearMarkups(){
@@ -466,11 +437,10 @@
   }
 
   async function setViewerSelectionSafe(modelObjectIds, msAfter=450){
-    const snap = selectionToSnapshot((modelObjectIds||[]).map(x => ({
+    lastProgrammaticSnapshot = selectionToSnapshot((modelObjectIds||[]).map(x => ({
       modelId: x.modelId,
       objectRuntimeIds: x.objectRuntimeIds
     })));
-    lastProgrammaticSnapshot = snap;
 
     await withSelectionSuppressed(async () => {
       try{
@@ -508,9 +478,6 @@
 
     try{
       setError("");
-
-      lastCamDist = await getCameraDistanceEstimate();
-      if (myRun !== refreshRunId) return;
 
       const config = getConfig();
       if (!config.length){
@@ -557,14 +524,15 @@
           const full = buildLabelText(config, objProps);
           if (!norm(full)) continue;
 
-          const dyn = buildDynamicLabel(full);
+          // Ingen dynamikk:
+          const shown = buildDynamicLabel(full);
 
           const guid = await getIfcGuid(modelId, rid);
           if (myRun !== refreshRunId) return;
 
           const name = guessObjectName(objProps);
 
-          const mid = await addTextMarkupOverObject(modelId, rid, dyn);
+          const mid = await addTextMarkupOverObject(modelId, rid, shown);
           if (myRun !== refreshRunId) return;
 
           if (mid != null){ lastMarkupIds.push(mid); made++; }
@@ -619,12 +587,10 @@
     if (isSelectionLocked()) return;
 
     const snap = selectionToSnapshot(selection);
-
     if (snap && snap === lastProgrammaticSnapshot){
       lastSelectionSnapshot = snap;
       return;
     }
-
     if (snap === lastSelectionSnapshot) return;
     lastSelectionSnapshot = snap;
 
@@ -649,6 +615,7 @@
       return;
     }
 
+    // Hvis bruker markerer flere samtidig (Ctrl/Shift), erstatt med akkurat det utvalget:
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -780,22 +747,16 @@
 
   function onWorkspaceEvent(event, payload){
     const ev = (event || "").toLowerCase();
-
     if (ev.includes("selection")){
       const sel = (payload && payload.data) ? payload.data : [];
       handleSelectionChanged(sel);
       return;
-    }
-
-    if (ev.includes("camera")){
-      setTimeout(async () => { lastCamDist = await getCameraDistanceEstimate(); }, 0);
     }
   }
 
   async function connect(){
     try{
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
-      lastCamDist = await getCameraDistanceEstimate();
 
       if (!API?.markup?.addTextMarkup){
         setStatus("Tilkoblet (men MarkupAPI mangler – 3D-tekst støttes ikke i denne workspacen).");
