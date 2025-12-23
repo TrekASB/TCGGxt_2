@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiPropertyLabelr</title>
+  <title>MMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -52,7 +52,6 @@
     select:disabled{background:#f3f4f6;color:#9ca3af;}
     button{border:none;color:#fff;font-weight:900;cursor:pointer;}
     #scanBtn{background:var(--success);}
-    #clearBtn{background:var(--danger);}
     #csvBtn{background:var(--primary);}
     #resetListBtn{background:var(--warn); color:#111827;}
     button:disabled{opacity:.6;cursor:not-allowed;}
@@ -80,10 +79,10 @@
   </div>
 
   <div class="titleBlock">
-    <div class="title">MultiPropertyLabelr</div>
+    <div class="title">MMIXtractor</div>
     <div class="org">Norconsult Norge</div>
     <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
-    <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
+    <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift i klikkpunkt + liste + CSV</div>
   </div>
 
   <div class="status" id="status">Kobler til Trimble Connect…</div>
@@ -96,13 +95,13 @@
         <span class="pill">Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b></span>
         <span class="pill">Klikk i 3D = <b>toggle</b> inn/ut av liste</span>
         <span class="pill">Ctrl/Shift i TC = <b>multi-select</b></span>
+        <span class="pill">Påskrift plasseres i <b>klikkpunkt</b> (fallback = bbox)</span>
       </div>
 
       <div class="row" style="gap:8px;">
         <button id="scanBtn" disabled style="width:auto;padding:10px 12px;">🔄 Oppdater liste</button>
         <button id="csvBtn" disabled style="width:auto;padding:10px 12px;">📤 Eksporter CSV</button>
         <button id="resetListBtn" disabled style="width:auto;padding:10px 12px;">🗑️ Tøm liste</button>
-        <button id="clearBtn" disabled style="width:auto;padding:10px 12px;">🧹 Fjern påskrift</button>
       </div>
     </div>
 
@@ -142,8 +141,7 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
-      Ved zoom ut viser vi <b>kortere tekst</b> (færre linjer) for å redusere overlapp.<br>
-      <b>Linjeobjekter:</b> tekst plasseres nå ved nærmeste punkt til kamera + ~20 cm opp.
+      Ved zoom ut viser vi <b>kortere tekst</b> (færre linjer) for å redusere overlapp.
     </div>
   </div>
 
@@ -176,11 +174,16 @@
   let availableProps = {};
   const ifcGuidCache = new Map();
 
+  // Markups + valgtliste
   let lastMarkupIds = [];
   const picked = new Map();
 
+  // NYTT: lagrer siste klikkpunkt per objekt (mm) for presis plassering
+  const lastPickPointMmByKey = new Map(); // key = modelId:runtimeId -> {x,y,z} i mm
+
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
+  // selection-loop beskyttelse
   let lastSelectionSnapshot = "";
   let lastProgrammaticSnapshot = "";
   let selectionLockUntil = 0;
@@ -189,13 +192,13 @@
   let refreshRunId = 0;
   let camDebounce = null;
 
+  // Når kamera er "langt unna" -> kompakt tekst for mindre overlap
   const COMPACT_DISTANCE_M = 120;
 
   const els = {
     status: document.getElementById("status"),
     error: document.getElementById("error"),
     scanBtn: document.getElementById("scanBtn"),
-    clearBtn: document.getElementById("clearBtn"),
     csvBtn: document.getElementById("csvBtn"),
     resetListBtn: document.getElementById("resetListBtn"),
     countInfo: document.getElementById("countInfo"),
@@ -437,47 +440,58 @@
       console.warn("removeMarkups feilet:", e);
     }finally{
       lastMarkupIds = [];
-      els.clearBtn.disabled = true;
     }
   }
 
-  function classifyByBBox(bb){
-    const dx = Math.abs(bb.max.x - bb.min.x);
-    const dy = Math.abs(bb.max.y - bb.min.y);
-    const dz = Math.abs(bb.max.z - bb.min.z);
-
-    const planLong = Math.max(dx, dz);
-    const planShort = Math.max(1e-6, Math.min(dx, dz));
-    const ratio = planLong / planShort;
-
-    const isLinear = ratio >= 6;
-    const isPointLike = (planLong <= 0.8);
-    return { dx, dy, dz, ratio, isLinear, isPointLike };
+  // ---------- Klikkpunkt normalisering ----------
+  // Markup API forventer mm. Noen events kan gi meter.
+  function toMmMaybe(v){
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    // Heuristikk: hvis verdien er "liten" antar vi meter
+    // (typisk pos i meter ~ 0..10000). mm i TC blir ofte >> 10000.
+    if (Math.abs(n) < 50000) return n * 1000.0; // meter -> mm
+    return n; // allerede mm
   }
 
-  // ====== NYTT: kamera-pos + nærmeste punkt på AABB ======
-  async function getCameraPosition(){
-    try{
-      if (!API?.viewer?.getCamera) return null;
-      const cam = await API.viewer.getCamera();
-      const pos = cam?.position || cam?.eye || cam?.cameraPosition;
-      if (!pos) return null;
-      return { x: Number(pos.x), y: Number(pos.y), z: Number(pos.z) };
-    }catch(e){
-      return null;
-    }
-  }
-
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-
-  function closestPointOnAABB(point, bb){
-    // bb min/max er i meter
-    const x = clamp(point.x, bb.min.x, bb.max.x);
-    const y = clamp(point.y, bb.min.y, bb.max.y);
-    const z = clamp(point.z, bb.min.z, bb.max.z);
+  function normalizePickPointToMm(pt){
+    if (!pt) return null;
+    const x = toMmMaybe(pt.x ?? pt.positionX);
+    const y = toMmMaybe(pt.y ?? pt.positionY);
+    const z = toMmMaybe(pt.z ?? pt.positionZ);
+    if (x === null || y === null || z === null) return null;
     return { x, y, z };
   }
-  // =======================================================
+
+  function tryExtractPickFromPayload(payload){
+    // Vi forsøker mange mulige feltnavn (Trimble events varierer)
+    // Mål: få {x,y,z} + modelId + runtimeId
+    const data0 = payload?.data?.[0];
+
+    const modelId =
+      payload?.modelId || payload?.modelID || payload?.model ||
+      payload?.hit?.modelId || payload?.hit?.modelID ||
+      data0?.modelId || data0?.modelID || null;
+
+    const runtimeId =
+      payload?.objectId || payload?.objectID || payload?.runtimeId ||
+      payload?.hit?.objectId || payload?.hit?.objectID || payload?.hit?.runtimeId ||
+      data0?.objectId || data0?.objectID || (data0?.objectRuntimeIds?.[0]) || null;
+
+    // Punkt:
+    const pt =
+      payload?.pickPoint || payload?.point || payload?.position ||
+      payload?.hit?.point || payload?.hit?.position || payload?.hit?.pickPoint ||
+      payload?.hit?.intersection || payload?.intersection ||
+      payload?.worldPoint || payload?.worldPosition ||
+      data0?.pickPoint || data0?.point || data0?.position ||
+      payload?.hit || null;
+
+    const mm = normalizePickPointToMm(pt);
+    if (!modelId || runtimeId === null || !mm) return null;
+    return { modelId, runtimeId: Number(runtimeId), mm };
+  }
+  // --------------------------------------------
 
   function selectionToSnapshot(sel){
     const parts = [];
@@ -523,8 +537,63 @@
     }
   }
 
-  // ====== OPPDATERT: Linjeobjekt bruker nærmeste punkt til kamera ======
-  async function addTextMarkupOverObject(modelId, runtimeId, text, indexForStagger){
+  // ---------- Markup: plasser i klikkpunkt om tilgjengelig ----------
+  async function addTextMarkupAtPoint(modelId, runtimeId, text, pickMm){
+    if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
+
+    // Bruk klikkpunkt, men løft litt opp i Y så det ikke ligger inne i geometrien.
+    const liftMm = 200; // 20 cm
+    const leaderMm = 220;
+
+    const x = pickMm.x;
+    const yTop = pickMm.y + liftMm;
+    const z = pickMm.z;
+
+    const start = { positionX: x, positionY: yTop, positionZ: z, modelId, objectId: runtimeId };
+    const end   = { positionX: x, positionY: yTop + leaderMm, positionZ: z, modelId, objectId: runtimeId };
+
+    const created = await API.markup.addTextMarkup([{
+      start, end, text,
+      color: { r: 0, g: 0, b: 204, a: 255 }
+    }]);
+
+    if (created && created.length && typeof created[0].id === "number") return created[0].id;
+    return null;
+  }
+
+  // Fallback: bbox-plassering (som før) hvis vi ikke har klikkpunkt
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  async function getCameraPosition(){
+    try{
+      if (!API?.viewer?.getCamera) return null;
+      const cam = await API.viewer.getCamera();
+      const pos = cam?.position || cam?.eye || cam?.cameraPosition;
+      if (!pos) return null;
+      return { x: Number(pos.x), y: Number(pos.y), z: Number(pos.z) };
+    }catch(e){
+      return null;
+    }
+  }
+
+  function closestPointOnAABB(point, bb){
+    const x = clamp(point.x, bb.min.x, bb.max.x);
+    const y = clamp(point.y, bb.min.y, bb.max.y);
+    const z = clamp(point.z, bb.min.z, bb.max.z);
+    return { x, y, z };
+  }
+
+  function classifyByBBox(bb){
+    const dx = Math.abs(bb.max.x - bb.min.x);
+    const dz = Math.abs(bb.max.z - bb.min.z);
+    const planLong = Math.max(dx, dz);
+    const planShort = Math.max(1e-6, Math.min(dx, dz));
+    const ratio = planLong / planShort;
+    const isLinear = ratio >= 6;
+    return { isLinear };
+  }
+
+  async function addTextMarkupFallbackBbox(modelId, runtimeId, text){
     if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
 
     const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
@@ -533,11 +602,9 @@
     const bb = boxes[0].boundingBox;
     const cls = classifyByBBox(bb);
 
-    // Default: senter av bbox
     let anchorX = (bb.min.x + bb.max.x) / 2.0;
     let anchorZ = (bb.min.z + bb.max.z) / 2.0;
 
-    // Linje: finn nærmeste punkt til kamera på AABB
     if (cls.isLinear){
       const camPos = await getCameraPosition();
       if (camPos){
@@ -547,17 +614,12 @@
       }
     }
 
-    // mm-konvertering
     const x_mm = anchorX * 1000.0;
     const z_mm = anchorZ * 1000.0;
     const topY_mm = bb.max.y * 1000.0;
 
-    // Plassering
-    const baseLift = cls.isLinear ? 200 : 80;      // 20 cm over (linje)
-    const leaderLen = cls.isLinear ? 220 : 520;
-
-    const startY = topY_mm + baseLift;
-    const endY   = startY + leaderLen;
+    const startY = topY_mm + 200;
+    const endY = startY + (cls.isLinear ? 220 : 520);
 
     const start = { positionX: x_mm, positionY: startY, positionZ: z_mm, modelId, objectId: runtimeId };
     const end   = { positionX: x_mm, positionY: endY,   positionZ: z_mm, modelId, objectId: runtimeId };
@@ -570,7 +632,16 @@
     if (created && created.length && typeof created[0].id === "number") return created[0].id;
     return null;
   }
-  // ====================================================================
+
+  async function addTextMarkupSmart(modelId, runtimeId, text){
+    const key = `${modelId}:${runtimeId}`;
+    const pickMm = lastPickPointMmByKey.get(key);
+    if (pickMm){
+      return await addTextMarkupAtPoint(modelId, runtimeId, text, pickMm);
+    }
+    return await addTextMarkupFallbackBbox(modelId, runtimeId, text);
+  }
+  // -------------------------------------------------------------
 
   async function rebuildMarkupsOnly(){
     if (!picked.size){
@@ -588,7 +659,6 @@
       if (myRun !== refreshRunId) return;
 
       let made = 0;
-      let idx = 0;
 
       for (const it of picked.values()){
         if (myRun !== refreshRunId) return;
@@ -596,11 +666,10 @@
         const text = zoomedOut ? (it.compactText || it.fullText || "") : (it.fullText || "");
         if (!norm(text)) continue;
 
-        const mid = await addTextMarkupOverObject(it.modelId, Number(it.runtimeId), text, idx++);
+        const mid = await addTextMarkupSmart(it.modelId, Number(it.runtimeId), text);
         if (mid != null){ lastMarkupIds.push(mid); made++; }
       }
 
-      els.clearBtn.disabled = !lastMarkupIds.length;
       setStatus(zoomedOut ? `Zoom ut: kortere tekst. Påskrifter: ${made}.` : `Zoom inn: full tekst. Påskrifter: ${made}.`);
     }catch(e){
       console.error(e);
@@ -680,6 +749,7 @@
       els.tbody.innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Ingen påskrift ble laget (mangler verdier / filtrert bort).</td></tr>`;
       els.countInfo.textContent = String(picked.size);
 
+      // Klikk rad -> zoom
       els.tbody.querySelectorAll("tr.clickable").forEach(tr => {
         tr.addEventListener("click", async () => {
           const modelId = tr.getAttribute("data-m");
@@ -736,7 +806,7 @@
     const link = document.createElement("a");
     const dateStr = new Date().toISOString().slice(0,10);
     link.href = url;
-    link.download = `TC_MultiPropertyLabelr_ValgteObjekter_${dateStr}.csv`;
+    link.download = `TC_MMIXtractor_ValgteObjekter_${dateStr}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -753,6 +823,7 @@
 
     await clearMarkups();
     picked.clear();
+    lastPickPointMmByKey.clear();
     updateButtonsAndTableEmpty();
 
     lastSelectionSnapshot = "";
@@ -760,6 +831,13 @@
 
     await setViewerSelectionSafe([], 900);
     setStatus("🗑️ Listen er tømt (tabell + selection + påskrift).");
+  }
+
+  function selectionContainsAnyIds(selection){
+    for (const s of (selection||[])){
+      if (s?.modelId && (s.objectRuntimeIds||[]).length) return true;
+    }
+    return false;
   }
 
   async function handleSelectionChanged(selection){
@@ -773,6 +851,8 @@
     if (snap === lastSelectionSnapshot) return;
     lastSelectionSnapshot = snap;
 
+    if (!selectionContainsAnyIds(selection)) return;
+
     const keys = [];
     for (const s of (selection || [])){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -781,6 +861,7 @@
     }
     if (!keys.length) return;
 
+    // toggle logikk (som før)
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -793,6 +874,7 @@
       return;
     }
 
+    // multi: sync til viewer selection
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -860,12 +942,22 @@
   function onWorkspaceEvent(event, payload){
     const ev = (event || "").toLowerCase();
 
+    // 1) Forsøk å fange klikkpunkt (pick/intersection) uansett eventnavn
+    const pick = tryExtractPickFromPayload(payload);
+    if (pick){
+      const key = `${pick.modelId}:${pick.runtimeId}`;
+      lastPickPointMmByKey.set(key, pick.mm);
+      // (ingen return her, vi lar selection-event også håndteres)
+    }
+
+    // 2) Selection events
     if (ev.includes("selection")){
       const sel = (payload && payload.data) ? payload.data : [];
       handleSelectionChanged(sel);
       return;
     }
 
+    // 3) Camera events -> rebuild kompakt/full tekst
     if (ev.includes("camera")){
       scheduleRebuildMarkupsOnly();
       return;
@@ -877,13 +969,7 @@
       API = await TrimbleConnectWorkspace.connect(window.parent, onWorkspaceEvent, 30000);
 
       els.scanBtn.disabled = false;
-      els.clearBtn.disabled = false;
       setStatus("✅ Tilkoblet. Trykk «Oppdater liste» for å fylle Pset/Property.");
-
-      setInterval(async () => {
-        if (!picked.size) return;
-        scheduleRebuildMarkupsOnly();
-      }, 1200);
     }catch(e){
       console.error(e);
       setError("Kunne ikke koble til Trimble Connect: " + (e.message || e));
@@ -895,10 +981,6 @@
   els.scanBtn.addEventListener("click", scanPsets);
   els.csvBtn.addEventListener("click", exportCSV);
   els.resetListBtn.addEventListener("click", resetPickedList);
-  els.clearBtn.addEventListener("click", async () => {
-    await clearMarkups();
-    setStatus("🧹 Påskrift fjernet (listen beholdes).");
-  });
 
   els.psetA.addEventListener("change", () => onPsetChanged(els.psetA, els.a));
   els.psetB.addEventListener("change", () => onPsetChanged(els.psetB, els.b));
