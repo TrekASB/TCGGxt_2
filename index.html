@@ -142,8 +142,8 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
-      Ved zoom ut gjør vi teksten <b>kortere</b> (færre linjer) for å redusere overlapp.
-      <br><b>Oppdatert:</b> For linjeobjekter (rør/ledninger) legges teksten mye nærmere sentrum/over objektet (ikke langt til siden).
+      Ved zoom ut gjør vi teksten <b>kortere</b> (færre linjer) for å redusere overlapp.<br>
+      <b>Linjeobjekter:</b> påskrift plasseres ~20 cm rett over objektet.
     </div>
   </div>
 
@@ -444,8 +444,7 @@
     }
   }
 
-  // --- NYTT: bedre plassering for linjeobjekter (rør/ledninger) ---
-  // Vi detekterer "linjeobjekt" ved at bounding box er veldig avlang i plan (X/Z).
+  // --- Oppdatert: linjeobjekter får tekst ~20 cm over (200 mm), uten sideforskyvning ---
   function classifyByBBox(bb){
     const dx = Math.abs(bb.max.x - bb.min.x);
     const dy = Math.abs(bb.max.y - bb.min.y);
@@ -455,26 +454,21 @@
     const planShort = Math.max(1e-6, Math.min(dx, dz));
     const ratio = planLong / planShort;
 
-    // linje hvis veldig avlang i plan og relativt "tynn"
-    const isLinear = ratio >= 6;
-
-    // "punkt" hvis liten i plan
-    const isPointLike = (planLong <= 0.8); // ~0.8 m eller mindre
-
+    const isLinear = ratio >= 6; // avlang i plan
+    const isPointLike = (planLong <= 0.8);
     return { dx, dy, dz, ratio, isLinear, isPointLike };
   }
 
-  // Antioverlapp: for linjer bruker vi nesten ingen sideforskyvning (står over senterlinjen),
-  // men kan stable litt i høyde hvis mange objekter tett.
   function staggerOffsetsMm(index, isLinear){
     if (isLinear){
-      const stepY = 110; // mm
-      const row = index % 8;
+      // ingen side-offset. kun litt i høyde for å unngå direkte overlapp hvis flere i samme område
+      const stepY = 90; // mm
+      const row = index % 10;
       return { dx: 0, dy: row * stepY, dz: 0 };
     }
-    // punkter: liten sideforskyvning OK for å unngå overlapp
-    const step = 140; // mm
-    const side = 120; // mm
+    // punkt: liten side-offset ok
+    const step = 120; // mm
+    const side = 110; // mm
     const row = index % 6;
     const col = Math.floor(index / 6) % 2;
     return { dy: row * step, dx: (col === 0 ? -side : side) * (row % 2 ? 1 : -1), dz: 0 };
@@ -488,7 +482,6 @@
 
     const bb = boxes[0].boundingBox;
     const min = bb.min, max = bb.max;
-
     const cls = classifyByBBox(bb);
 
     const cx_mm = ((min.x + max.x) / 2) * 1000;
@@ -497,11 +490,10 @@
 
     const st = staggerOffsetsMm(indexForStagger || 0, cls.isLinear);
 
-    // Plassering:
-    // - Linjeobjekter: veldig nær toppen (rett over) + minimal offset
-    // - Punktobjekter: som før
-    const baseLift = cls.isLinear ? 45 : 80;     // mm over topp
-    const leaderLen = cls.isLinear ? 260 : 520;  // mm lederlinje
+    // Viktig: linjeobjekter -> 200 mm over objekt (20 cm)
+    const baseLift = cls.isLinear ? 200 : 80;      // mm
+    const leaderLen = cls.isLinear ? 220 : 520;    // mm
+
     const startY = topY_mm + baseLift + st.dy;
     const endY   = startY + leaderLen;
 
@@ -526,7 +518,7 @@
     if (created && created.length && typeof created[0].id === "number") return created[0].id;
     return null;
   }
-  // ---------------------------------------------------------------
+  // -------------------------------------------------------------
 
   function selectionToSnapshot(sel){
     const parts = [];
@@ -913,4 +905,3 @@
 </script>
 </body>
 </html>
-
