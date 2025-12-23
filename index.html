@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MMIXtractor</title>
+  <title>MultiPropertyLabelr</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -80,7 +80,7 @@
   </div>
 
   <div class="titleBlock">
-    <div class="title">MMIXtractor</div>
+    <div class="title">MultiPropertyLabelr</div>
     <div class="org">Norconsult Norge</div>
     <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
@@ -142,8 +142,8 @@
 
     <div class="muted hint">
       Tips: Slå på <b>Markups/Annotations</b> i viewer for å se tekst.<br>
-      Ved zoom ut gjør vi teksten <b>kortere</b> (færre linjer) for å redusere overlapp.<br>
-      <b>Linjeobjekter:</b> påskrift plasseres ~20 cm rett over objektet.
+      Ved zoom ut viser vi <b>kortere tekst</b> (færre linjer) for å redusere overlapp.<br>
+      <b>Linjeobjekter:</b> tekst plasseres nå ved nærmeste punkt til kamera + ~20 cm opp.
     </div>
   </div>
 
@@ -177,11 +177,10 @@
   const ifcGuidCache = new Map();
 
   let lastMarkupIds = [];
-  const picked = new Map(); // key modelId:runtimeId -> {modelId,runtimeId,name,guid,fullText,compactText}
+  const picked = new Map();
 
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
-  // Guards: løser "Tøm liste" -> gamle objekter popper tilbake
   let lastSelectionSnapshot = "";
   let lastProgrammaticSnapshot = "";
   let selectionLockUntil = 0;
@@ -190,7 +189,6 @@
   let refreshRunId = 0;
   let camDebounce = null;
 
-  // Zoom-ut terskel for å korte ned tekst (færre linjer)
   const COMPACT_DISTANCE_M = 120;
 
   const els = {
@@ -383,7 +381,6 @@
     return lines.join("\n");
   }
 
-  // Zoom-ut: kortere tekst (færre linjer) for å redusere overlapp
   function buildCompactText(config, objProps){
     const lines = [];
     for (const block of config){
@@ -444,7 +441,6 @@
     }
   }
 
-  // --- Oppdatert: linjeobjekter får tekst ~20 cm over (200 mm), uten sideforskyvning ---
   function classifyByBBox(bb){
     const dx = Math.abs(bb.max.x - bb.min.x);
     const dy = Math.abs(bb.max.y - bb.min.y);
@@ -454,71 +450,34 @@
     const planShort = Math.max(1e-6, Math.min(dx, dz));
     const ratio = planLong / planShort;
 
-    const isLinear = ratio >= 6; // avlang i plan
+    const isLinear = ratio >= 6;
     const isPointLike = (planLong <= 0.8);
     return { dx, dy, dz, ratio, isLinear, isPointLike };
   }
 
-  function staggerOffsetsMm(index, isLinear){
-    if (isLinear){
-      // ingen side-offset. kun litt i høyde for å unngå direkte overlapp hvis flere i samme område
-      const stepY = 90; // mm
-      const row = index % 10;
-      return { dx: 0, dy: row * stepY, dz: 0 };
+  // ====== NYTT: kamera-pos + nærmeste punkt på AABB ======
+  async function getCameraPosition(){
+    try{
+      if (!API?.viewer?.getCamera) return null;
+      const cam = await API.viewer.getCamera();
+      const pos = cam?.position || cam?.eye || cam?.cameraPosition;
+      if (!pos) return null;
+      return { x: Number(pos.x), y: Number(pos.y), z: Number(pos.z) };
+    }catch(e){
+      return null;
     }
-    // punkt: liten side-offset ok
-    const step = 120; // mm
-    const side = 110; // mm
-    const row = index % 6;
-    const col = Math.floor(index / 6) % 2;
-    return { dy: row * step, dx: (col === 0 ? -side : side) * (row % 2 ? 1 : -1), dz: 0 };
   }
 
-  async function addTextMarkupOverObject(modelId, runtimeId, text, indexForStagger){
-    if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 
-    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
-    if (!boxes || !boxes.length || !boxes[0]?.boundingBox) return null;
-
-    const bb = boxes[0].boundingBox;
-    const min = bb.min, max = bb.max;
-    const cls = classifyByBBox(bb);
-
-    const cx_mm = ((min.x + max.x) / 2) * 1000;
-    const cz_mm = ((min.z + max.z) / 2) * 1000;
-    const topY_mm = (max.y) * 1000;
-
-    const st = staggerOffsetsMm(indexForStagger || 0, cls.isLinear);
-
-    // Viktig: linjeobjekter -> 200 mm over objekt (20 cm)
-    const baseLift = cls.isLinear ? 200 : 80;      // mm
-    const leaderLen = cls.isLinear ? 220 : 520;    // mm
-
-    const startY = topY_mm + baseLift + st.dy;
-    const endY   = startY + leaderLen;
-
-    const start = {
-      positionX: cx_mm + st.dx,
-      positionY: startY,
-      positionZ: cz_mm + st.dz,
-      modelId, objectId: runtimeId
-    };
-    const end = {
-      positionX: cx_mm + st.dx,
-      positionY: endY,
-      positionZ: cz_mm + st.dz,
-      modelId, objectId: runtimeId
-    };
-
-    const created = await API.markup.addTextMarkup([{
-      start, end, text,
-      color: { r: 0, g: 0, b: 204, a: 255 }
-    }]);
-
-    if (created && created.length && typeof created[0].id === "number") return created[0].id;
-    return null;
+  function closestPointOnAABB(point, bb){
+    // bb min/max er i meter
+    const x = clamp(point.x, bb.min.x, bb.max.x);
+    const y = clamp(point.y, bb.min.y, bb.max.y);
+    const z = clamp(point.z, bb.min.z, bb.max.z);
+    return { x, y, z };
   }
-  // -------------------------------------------------------------
+  // =======================================================
 
   function selectionToSnapshot(sel){
     const parts = [];
@@ -564,6 +523,55 @@
     }
   }
 
+  // ====== OPPDATERT: Linjeobjekt bruker nærmeste punkt til kamera ======
+  async function addTextMarkupOverObject(modelId, runtimeId, text, indexForStagger){
+    if (!API?.markup?.addTextMarkup) throw new Error("MarkupAPI ikke tilgjengelig (addTextMarkup).");
+
+    const boxes = await API.viewer.getObjectBoundingBoxes(modelId, [runtimeId]);
+    if (!boxes || !boxes.length || !boxes[0]?.boundingBox) return null;
+
+    const bb = boxes[0].boundingBox;
+    const cls = classifyByBBox(bb);
+
+    // Default: senter av bbox
+    let anchorX = (bb.min.x + bb.max.x) / 2.0;
+    let anchorZ = (bb.min.z + bb.max.z) / 2.0;
+
+    // Linje: finn nærmeste punkt til kamera på AABB
+    if (cls.isLinear){
+      const camPos = await getCameraPosition();
+      if (camPos){
+        const cp = closestPointOnAABB(camPos, bb);
+        anchorX = cp.x;
+        anchorZ = cp.z;
+      }
+    }
+
+    // mm-konvertering
+    const x_mm = anchorX * 1000.0;
+    const z_mm = anchorZ * 1000.0;
+    const topY_mm = bb.max.y * 1000.0;
+
+    // Plassering
+    const baseLift = cls.isLinear ? 200 : 80;      // 20 cm over (linje)
+    const leaderLen = cls.isLinear ? 220 : 520;
+
+    const startY = topY_mm + baseLift;
+    const endY   = startY + leaderLen;
+
+    const start = { positionX: x_mm, positionY: startY, positionZ: z_mm, modelId, objectId: runtimeId };
+    const end   = { positionX: x_mm, positionY: endY,   positionZ: z_mm, modelId, objectId: runtimeId };
+
+    const created = await API.markup.addTextMarkup([{
+      start, end, text,
+      color: { r: 0, g: 0, b: 204, a: 255 }
+    }]);
+
+    if (created && created.length && typeof created[0].id === "number") return created[0].id;
+    return null;
+  }
+  // ====================================================================
+
   async function rebuildMarkupsOnly(){
     if (!picked.size){
       await clearMarkups();
@@ -579,8 +587,8 @@
       await clearMarkups();
       if (myRun !== refreshRunId) return;
 
-      let idx = 0;
       let made = 0;
+      let idx = 0;
 
       for (const it of picked.values()){
         if (myRun !== refreshRunId) return;
@@ -728,7 +736,7 @@
     const link = document.createElement("a");
     const dateStr = new Date().toISOString().slice(0,10);
     link.href = url;
-    link.download = `TC_MMIXtractor_ValgteObjekter_${dateStr}.csv`;
+    link.download = `TC_MultiPropertyLabelr_ValgteObjekter_${dateStr}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -773,7 +781,6 @@
     }
     if (!keys.length) return;
 
-    // 1 objekt: toggle
     if (keys.length === 1){
       const key = keys[0];
       if (picked.has(key)) picked.delete(key);
@@ -786,7 +793,6 @@
       return;
     }
 
-    // Multi: sett listen lik selection
     picked.clear();
     for (const s of selection){
       for (const rid of (s.objectRuntimeIds || [])){
@@ -874,7 +880,6 @@
       els.clearBtn.disabled = false;
       setStatus("✅ Tilkoblet. Trykk «Oppdater liste» for å fylle Pset/Property.");
 
-      // Poll kamera (for å korte ned tekst ved zoom ut)
       setInterval(async () => {
         if (!picked.size) return;
         scheduleRebuildMarkupsOnly();
