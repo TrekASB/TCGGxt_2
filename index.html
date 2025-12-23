@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MultiPropertyLabel</title>
+  <title>MMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
 
@@ -80,7 +80,7 @@
   </div>
 
   <div class="titleBlock">
-    <div class="title">MultiPropertyLabel</div>
+    <div class="title">MMIXtractor</div>
     <div class="org">Norconsult Norge</div>
     <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     <div class="sub">Velg Pset + properties → klikk objekter i 3D (multi) → påskrift + liste + CSV</div>
@@ -728,7 +728,7 @@
     const link = document.createElement("a");
     const dateStr = new Date().toISOString().slice(0,10);
     link.href = url;
-    link.download = `TC_MultiPropertyLabel_ValgteObjekter_${dateStr}.csv`;
+    link.download = `TC_MMIXtractor_ValgteObjekter_${dateStr}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
